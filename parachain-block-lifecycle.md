@@ -66,6 +66,28 @@
     - [Trie Nodes Are Not Overwritten](#trie-nodes-are-not-overwritten)
     - [Pruning](#pruning)
   - [27. Complete Production Cycle Summary](#27-complete-production-cycle-summary)
+- [Part III: Supplementary Concepts](#part-iii-supplementary-concepts)
+  - [28. Weight System: The 2D Model](#28-weight-system-the-2d-model)
+    - [Why Two Dimensions](#why-two-dimensions)
+    - [Weight Structure](#weight-structure)
+    - [How Weights Are Determined](#how-weights-are-determined)
+    - [CheckWeight Extension](#checkweight-extension)
+    - [Block Limits Configuration](#block-limits-configuration)
+    - [Weight in Parachains: The PoV Constraint](#weight-in-parachains-the-pov-constraint)
+  - [29. Events System](#29-events-system)
+    - [What Are Events](#what-are-events)
+    - [Depositing Events](#depositing-events)
+    - [Event Storage](#event-storage)
+    - [The Event Lifecycle](#the-event-lifecycle)
+    - [System Events](#system-events)
+    - [Querying Events](#querying-events)
+  - [30. Header Structure and Digest](#30-header-structure-and-digest)
+    - [The Header Fields](#the-header-fields)
+    - [Digest Items](#digest-items)
+    - [PreRuntime Digest: Aura Slot](#preruntime-digest-aura-slot)
+    - [Seal Digest: Block Signature](#seal-digest-block-signature)
+    - [Consensus Digest](#consensus-digest)
+    - [How Digests Flow Through Block Production](#how-digests-flow-through-block-production)
 
 ---
 
@@ -1626,3 +1648,617 @@ Attempting `state_at(old_block)` on a node with pruning fails with "State alread
 ```
 
 **What follows (not covered in this document)**: The relay chain validators receive the collation, re-execute the block using only the PoV (without having the complete state), verify the state root matches, and if validation passes, include it in the relay chain where it is finalized with GRANDPA.
+
+---
+
+# Part III: Supplementary Concepts
+
+---
+
+## 28. Weight System: The 2D Model
+
+### Why Two Dimensions
+
+Originally, Substrate used a single-dimension weight representing computation time (`ref_time`). However, for parachains, there's a second critical constraint: the **Proof of Validity (PoV) size**. Relay chain validators must download and verify the PoV, which is limited (currently ~5MB on Polkadot).
+
+Every storage read during block execution adds data to the PoV. A transaction might be cheap computationally but read many storage items, bloating the proof. The 2D weight model captures both constraints.
+
+### Weight Structure
+
+**File**: `substrate/primitives/weights/src/weight_v2.rs`
+
+```rust
+#[derive(Encode, Decode, MaxEncodedLen, TypeInfo, Eq, PartialEq, Copy, Clone, Debug, Default)]
+pub struct Weight {
+    #[codec(compact)]
+    /// The weight of computational time used based on some reference hardware.
+    ref_time: u64,
+    #[codec(compact)]
+    /// The weight of storage space used by proof of validity.
+    proof_size: u64,
+}
+
+impl Weight {
+    /// Construct [`Weight`] from weight parts, namely reference time and proof size weights.
+    pub const fn from_parts(ref_time: u64, proof_size: u64) -> Self {
+        Self { ref_time, proof_size }
+    }
+
+    /// Returns true if any of `self`'s constituent weights is strictly greater than that of the
+    /// `other`'s, otherwise returns false.
+    pub const fn any_gt(self, other: Self) -> bool {
+        self.ref_time > other.ref_time || self.proof_size > other.proof_size
+    }
+}
+```
+
+- **`ref_time`**: Picoseconds of reference machine execution time. 1 second = 10^12 ref_time.
+- **`proof_size`**: Bytes of storage proof. Every storage read adds ~80+ bytes (node hashes in the merkle path).
+
+### How Weights Are Determined
+
+Weights come from **benchmarking**. The `#[pallet::weight]` attribute specifies the weight for each extrinsic:
+
+```rust
+#[pallet::call_index(0)]
+#[pallet::weight(T::WeightInfo::transfer_allow_death())]
+pub fn transfer_allow_death(
+    origin: OriginFor<T>,
+    dest: AccountIdLookupOf<T>,
+    #[pallet::compact] value: T::Balance,
+) -> DispatchResult { ... }
+```
+
+The `WeightInfo` trait is implemented by auto-generated code from benchmarks:
+
+**File**: `substrate/frame/balances/src/weights.rs` (generated)
+
+```rust
+impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
+    fn transfer_allow_death() -> Weight {
+        Weight::from_parts(52_000_000, 6196)
+            .saturating_add(T::DbWeight::get().reads(1))
+            .saturating_add(T::DbWeight::get().writes(1))
+    }
+}
+```
+
+- `52_000_000` ref_time (52 microseconds)
+- `6196` proof_size base
+- Plus 1 read and 1 write from `DbWeight`
+
+`DbWeight` defines the cost of storage operations:
+
+```rust
+pub struct RuntimeDbWeight {
+    pub read: Weight,   // e.g., Weight { ref_time: 25_000_000, proof_size: 1024 }
+    pub write: Weight,  // e.g., Weight { ref_time: 100_000_000, proof_size: 0 }
+}
+```
+
+### CheckWeight Extension
+
+**File**: `substrate/frame/system/src/extensions/check_weight.rs`
+
+The `CheckWeight` transaction extension validates that the extrinsic fits in the block:
+
+```rust
+#[derive(Encode, Decode, Clone, Eq, PartialEq, TypeInfo)]
+pub struct CheckWeight<T: Config + Send + Sync>(core::marker::PhantomData<T>);
+
+impl<T: Config + Send + Sync> CheckWeight<T> {
+    /// Checks if the current extrinsic does not exceed the maximum weight.
+    fn check_extrinsic_weight(
+        info: &DispatchInfoOf<T::RuntimeCall>,
+        len: usize,
+    ) -> Result<(), TransactionValidityError> {
+        let max = T::BlockWeights::get().get(info.class).max_extrinsic;
+        let total_weight_including_length =
+            info.total_weight().saturating_add_proof_size(len as u64);
+        match max {
+            Some(max) if total_weight_including_length.any_gt(max) => {
+                Err(InvalidTransaction::ExhaustsResources.into())
+            },
+            _ => Ok(()),
+        }
+    }
+
+    /// Validates and returns the next block length.
+    pub fn do_validate(
+        info: &DispatchInfoOf<T::RuntimeCall>,
+        len: usize,
+    ) -> Result<(ValidTransaction, u32), TransactionValidityError> {
+        let next_len = Self::check_block_length(info, len)?;
+        Self::check_extrinsic_weight(info, len)?;
+        Ok((Default::default(), next_len))
+    }
+}
+
+impl<T: Config + Send + Sync> TransactionExtension<T::RuntimeCall> for CheckWeight<T> {
+    const IDENTIFIER: &'static str = "CheckWeight";
+    type Val = u32; // next block length
+
+    fn validate(
+        &self,
+        origin: T::RuntimeOrigin,
+        _call: &T::RuntimeCall,
+        info: &DispatchInfoOf<T::RuntimeCall>,
+        len: usize,
+        _self_implicit: Self::Implicit,
+        _inherited_implication: &impl Encode,
+        _source: TransactionSource,
+    ) -> ValidateResult<Self::Val, T::RuntimeCall> {
+        let (validity, next_len) = Self::do_validate(info, len)?;
+        Ok((validity, next_len, origin))
+    }
+}
+```
+
+The key check is `any_gt`: if **either** `ref_time` or `proof_size` exceeds the limit, the transaction is rejected.
+
+### Block Limits Configuration
+
+Block weights are configured per dispatch class:
+
+**File**: Runtime configuration
+
+```rust
+parameter_types! {
+    pub const BlockWeights: frame_system::limits::BlockWeights =
+        frame_system::limits::BlockWeights::builder()
+            .base_block(Weight::from_parts(5_000_000_000, 0))  // Base overhead
+            .for_class(DispatchClass::Normal, |weights| {
+                weights.max_total = Some(Weight::from_parts(
+                    NORMAL_DISPATCH_RATIO * MAXIMUM_BLOCK_WEIGHT.ref_time(),
+                    NORMAL_DISPATCH_RATIO * MAX_POV_SIZE,
+                ));
+            })
+            .for_class(DispatchClass::Operational, |weights| {
+                weights.max_total = Some(Weight::from_parts(
+                    MAXIMUM_BLOCK_WEIGHT.ref_time(),
+                    MAX_POV_SIZE,
+                ));
+            })
+            .for_class(DispatchClass::Mandatory, |weights| {
+                weights.max_total = None;  // No limit for mandatory (inherents)
+            })
+            .build_or_panic();
+}
+```
+
+- **Normal**: User transactions. Typically 75% of block capacity.
+- **Operational**: Privileged operations (governance, staking). Can use remaining 25%.
+- **Mandatory**: Inherents. No limit — they must succeed or block production fails.
+
+### Weight in Parachains: The PoV Constraint
+
+For parachains, `proof_size` is directly tied to the relay chain's `max_pov_size` limit:
+
+```rust
+// In cumulus
+pub const MAX_POV_SIZE: u32 = 5 * 1024 * 1024;  // 5 MB
+
+// The block's proof_size budget
+let available_proof_size = validation_data.max_pov_size * 0.85;  // 85% safety margin
+```
+
+If transactions collectively read enough storage to exceed the PoV limit, subsequent transactions are rejected even if there's `ref_time` remaining. This is why `apply_extrinsics` can exit with `HitBlockWeightLimit` — it checks both dimensions.
+
+---
+
+## 29. Events System
+
+### What Are Events
+
+Events are the runtime's way of communicating what happened during execution to the outside world. Unlike storage (which represents state), events are:
+
+- **Transient**: Only exist during block execution, cleared for the next block
+- **Append-only**: Can only be added, never modified
+- **For external consumption**: Indexers, UIs, and other off-chain systems read them
+
+### Depositing Events
+
+Pallets emit events using the `deposit_event` function generated by the `#[pallet::event]` macro:
+
+```rust
+#[pallet::event]
+#[pallet::generate_deposit(pub(super) fn deposit_event)]
+pub enum Event<T: Config> {
+    /// Transfer succeeded.
+    Transfer { from: T::AccountId, to: T::AccountId, amount: T::Balance },
+    /// An account was created with some free balance.
+    Endowed { account: T::AccountId, free_balance: T::Balance },
+}
+```
+
+Usage in a dispatchable:
+
+```rust
+pub fn transfer(origin: OriginFor<T>, dest: T::AccountId, value: T::Balance) -> DispatchResult {
+    let sender = ensure_signed(origin)?;
+    // ... transfer logic ...
+
+    Self::deposit_event(Event::Transfer { from: sender, to: dest, amount: value });
+    Ok(())
+}
+```
+
+### Event Storage
+
+**File**: `substrate/frame/system/src/lib.rs`
+
+Events are stored in `frame_system`:
+
+```rust
+#[pallet::storage]
+#[pallet::unbounded]
+pub(super) type Events<T: Config> =
+    StorageValue<_, Vec<Box<EventRecord<T::RuntimeEvent, T::Hash>>>, ValueQuery>;
+
+/// Record of an event happening.
+#[derive(Encode, Decode, Debug, TypeInfo)]
+pub struct EventRecord<E: Parameter + Member, T> {
+    /// The phase of the block it happened in.
+    pub phase: Phase,
+    /// The event itself.
+    pub event: E,
+    /// The list of the topics this event has.
+    pub topics: Vec<T>,
+}
+
+pub enum Phase {
+    /// Applying an extrinsic.
+    ApplyExtrinsic(u32),  // Index of the extrinsic
+    /// Finalizing the block.
+    Finalization,
+    /// Block initialization.
+    Initialization,
+}
+```
+
+The `deposit_event` implementation:
+
+```rust
+pub fn deposit_event(event: impl Into<T::RuntimeEvent>) {
+    Self::deposit_event_indexed(&[], event.into())
+}
+
+pub fn deposit_event_indexed(topics: &[T::Hash], event: T::RuntimeEvent) {
+    let phase = ExecutionPhase::<T>::get().unwrap_or(Phase::Finalization);
+    let event_record = EventRecord { phase, event, topics: topics.to_vec() };
+
+    Events::<T>::append(event_record);
+
+    // Also store by topic for indexed lookup
+    for topic in topics {
+        EventTopics::<T>::append(topic, (block_number, event_index));
+    }
+
+    EventCount::<T>::mutate(|c| *c = c.saturating_add(1));
+}
+```
+
+### The Event Lifecycle
+
+1. **Block starts**: `reset_events()` clears `Events<T>` and `EventCount<T>`:
+
+```rust
+pub fn reset_events() {
+    <Events<T>>::kill();
+    EventCount::<T>::kill();
+    let _ = <EventTopics<T>>::clear(u32::max_value(), None);
+}
+```
+
+This happens in `initialize_block` before any execution.
+
+2. **During execution**: Events accumulate in storage as extrinsics execute. The `phase` field records which extrinsic emitted each event.
+
+3. **Block finalization**: Events remain in storage until `finalize()` returns. External systems can query them via RPC (`state_getStorage` on the Events key).
+
+4. **Next block**: `reset_events()` wipes everything. Events are not persisted across blocks.
+
+### System Events
+
+`frame_system` emits special events for every extrinsic:
+
+```rust
+#[pallet::event]
+pub enum Event<T: Config> {
+    /// An extrinsic completed successfully.
+    ExtrinsicSuccess { dispatch_info: DispatchInfo },
+    /// An extrinsic failed.
+    ExtrinsicFailed { dispatch_error: DispatchError, dispatch_info: DispatchInfo },
+    /// `:code` was updated.
+    CodeUpdated,
+    /// A new account was created.
+    NewAccount { account: T::AccountId },
+    /// An account was reaped.
+    KilledAccount { account: T::AccountId },
+    /// On on-chain remark happened.
+    Remarked { sender: T::AccountId, hash: T::Hash },
+    /// An upgrade was authorized.
+    UpgradeAuthorized { code_hash: T::Hash, check_version: bool },
+}
+```
+
+`note_applied_extrinsic` emits `ExtrinsicSuccess` or `ExtrinsicFailed` after each extrinsic:
+
+```rust
+pub fn note_applied_extrinsic(r: &DispatchResultWithPostInfo, info: DispatchInfo) {
+    Self::deposit_event(match r {
+        Ok(_) => Event::ExtrinsicSuccess { dispatch_info: info },
+        Err(err) => Event::ExtrinsicFailed { dispatch_error: err.error, dispatch_info: info },
+    });
+}
+```
+
+### Querying Events
+
+**Via RPC** (during block execution or immediately after):
+
+```bash
+# Get raw events storage
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"state_getStorage","params":["0x26aa394eea5630e07c48ae0c9558cef780d41e5e16056765bc8461851072c9d7"]}' \
+  http://localhost:9933
+```
+
+**Via Polkadot.js API**:
+
+```typescript
+const events = await api.query.system.events();
+events.forEach((record) => {
+    const { event, phase } = record;
+    console.log(`${event.section}.${event.method}`, phase.toString());
+});
+```
+
+**Via subscription**:
+
+```typescript
+api.query.system.events((events) => {
+    events.forEach((record) => { /* handle */ });
+});
+```
+
+---
+
+## 30. Header Structure and Digest
+
+### The Header Fields
+
+**File**: `substrate/primitives/runtime/src/generic/header.rs`
+
+```rust
+/// Abstraction over a block header for a substrate chain.
+#[derive(Encode, Decode, PartialEq, Eq, Clone, Debug, TypeInfo)]
+pub struct Header<Number: Copy + Into<U256> + TryFrom<U256>, Hash: HashT> {
+    /// The parent hash.
+    pub parent_hash: Hash::Output,
+    /// The block number.
+    #[codec(compact)]
+    pub number: Number,
+    /// The state trie merkle root
+    pub state_root: Hash::Output,
+    /// The merkle root of the extrinsics.
+    pub extrinsics_root: Hash::Output,
+    /// A chain-specific digest of data useful for light clients or referencing auxiliary data.
+    pub digest: Digest,
+}
+
+impl<Number, Hash> Header<Number, Hash> {
+    /// Convenience helper for computing the hash of the header.
+    pub fn hash(&self) -> Hash::Output {
+        Hash::hash_of(self)
+    }
+}
+```
+
+| Field | Size | Description |
+|-------|------|-------------|
+| `parent_hash` | 32 bytes | Hash of the parent block's header |
+| `number` | Compact encoded | Block height (0, 1, 2, ...) |
+| `state_root` | 32 bytes | Merkle patricia trie root of all storage |
+| `extrinsics_root` | 32 bytes | Merkle trie root of all extrinsics |
+| `digest` | Variable | Vector of digest items |
+
+The **block hash** is the hash of the encoded header:
+
+```rust
+pub fn hash(&self) -> Hash::Output {
+    <Hash as HashT>::hash_of(self)
+}
+```
+
+### Digest Items
+
+**File**: `substrate/primitives/runtime/src/generic/digest.rs`
+
+```rust
+pub struct Digest {
+    pub logs: Vec<DigestItem>,
+}
+
+pub enum DigestItem {
+    /// A pre-runtime digest item.
+    PreRuntime(ConsensusEngineId, Vec<u8>),
+    /// A consensus digest item.
+    Consensus(ConsensusEngineId, Vec<u8>),
+    /// A seal digest item.
+    Seal(ConsensusEngineId, Vec<u8>),
+    /// Runtime environment updated.
+    RuntimeEnvironmentUpdated,
+    /// Other.
+    Other(Vec<u8>),
+}
+
+pub type ConsensusEngineId = [u8; 4];
+```
+
+- **PreRuntime**: Added before runtime executes. Contains data like the Aura slot.
+- **Consensus**: Added during runtime execution. Contains consensus-relevant data.
+- **Seal**: Added after runtime execution. Contains the block author's signature.
+- **RuntimeEnvironmentUpdated**: Signals runtime code change.
+
+### PreRuntime Digest: Aura Slot
+
+For Aura consensus, the slot number is embedded in the header:
+
+**File**: `substrate/primitives/consensus/aura/src/lib.rs`
+
+```rust
+pub const AURA_ENGINE_ID: ConsensusEngineId = *b"aura";
+
+/// The Aura pre-digest.
+#[derive(Clone, Debug, Encode, Decode)]
+pub struct PreDigest {
+    /// The slot number.
+    pub slot: Slot,
+}
+```
+
+Created during block building:
+
+```rust
+// In slot_claim construction (block_builder_task.rs)
+let pre_digest = DigestItem::PreRuntime(
+    AURA_ENGINE_ID,
+    PreDigest { slot: para_slot.slot }.encode(),
+);
+```
+
+This allows validators to verify the block was produced in the correct slot without re-executing.
+
+### Seal Digest: Block Signature
+
+The seal is the collator's signature over the header (minus the seal itself):
+
+**File**: `substrate/client/consensus/aura/src/standalone.rs`
+
+```rust
+/// Produce the seal digest item by signing the hash of a block.
+///
+/// Note that after this is added to a block header, the hash of the block will change.
+pub fn seal<Hash, P>(
+    header_hash: &Hash,
+    public: &P::Public,
+    keystore: &KeystorePtr,
+) -> Result<sp_runtime::DigestItem, ConsensusError>
+where
+    Hash: AsRef<[u8]>,
+    P: Pair,
+    P::Signature: Codec + TryFrom<Vec<u8>>,
+    P::Public: AppPublic,
+{
+    let signature = keystore
+        .sign_with(
+            <AuthorityId<P> as AppCrypto>::ID,
+            <AuthorityId<P> as AppCrypto>::CRYPTO_ID,
+            public.as_slice(),
+            header_hash.as_ref(),
+        )
+        .map_err(|e| ConsensusError::CannotSign(format!("{}. Key: {:?}", e, public)))?
+        .ok_or_else(|| {
+            ConsensusError::CannotSign(format!("Could not find key in keystore. Key: {:?}", public))
+        })?;
+
+    let signature = signature
+        .as_slice()
+        .try_into()
+        .map_err(|_| ConsensusError::InvalidSignature(signature, public.to_raw_vec()))?;
+
+    let signature_digest_item =
+        <DigestItem as CompatibleDigestItem<P::Signature>>::aura_seal(signature);
+
+    Ok(signature_digest_item)
+}
+```
+
+The seal is added **after** `finalize_block` returns:
+
+```rust
+pub fn seal_block(block: Block, keystore: &KeystorePtr, author: &Public) -> Result<Block> {
+    let (mut header, extrinsics) = block.deconstruct();
+
+    // Hash the header WITHOUT the seal
+    let header_hash = header.hash();
+
+    // Create and append the seal
+    let seal = seal::<_, P>(&header_hash, keystore, author)?;
+    header.digest_mut().push(seal);
+
+    Ok(Block::new(header, extrinsics))
+}
+```
+
+Verification reverses this:
+
+```rust
+pub fn verify_seal(header: &Header) -> Result<(), Error> {
+    // Pop the seal
+    let seal = header.digest().logs().last()
+        .ok_or(Error::NoSeal)?;
+
+    // Reconstruct header without seal
+    let mut header_without_seal = header.clone();
+    header_without_seal.digest_mut().pop();
+
+    // Verify signature
+    let header_hash = header_without_seal.hash();
+    verify_signature(seal, header_hash)?;
+
+    Ok(())
+}
+```
+
+### Consensus Digest
+
+Runtime can emit consensus digests to signal changes to the consensus protocol:
+
+```rust
+// Example: Authority set change in Aura
+pub fn schedule_change(new_authorities: Vec<AuthorityId>) {
+    let log = DigestItem::Consensus(
+        AURA_ENGINE_ID,
+        ConsensusLog::AuthoritiesChange(new_authorities).encode(),
+    );
+    frame_system::Pallet::<T>::deposit_log(log);
+}
+```
+
+Common consensus digests:
+- **AuthoritiesChange**: New validator set
+- **OnDisabled**: A validator is temporarily disabled
+- **ForceChange**: Forced authority set change (for emergencies)
+
+### How Digests Flow Through Block Production
+
+```
+1. Block builder task creates initial digest:
+   └── PreRuntime(AURA, slot)
+
+2. BlockBuilder::new() passes digest to initialize_block:
+   └── Runtime stores digest in frame_system::Digest storage
+
+3. During runtime execution:
+   └── Pallets may add Consensus items via deposit_log()
+
+4. finalize_block() returns header with digest
+
+5. seal() adds the final item:
+   └── Seal(AURA, signature)
+
+Final digest structure:
+[
+    PreRuntime(AURA, slot_bytes),      // Added by node before runtime
+    Consensus(AURA, authorities),       // Optional: added by runtime
+    Seal(AURA, signature_bytes),        // Added by node after runtime
+]
+```
+
+When importing a block, the order is validated:
+- PreRuntime items must come first
+- Seal must be last
+- Multiple PreRuntime items are allowed (multi-engine scenarios)
+- Seal is stripped before re-executing for verification
