@@ -1,5 +1,7 @@
 # Parachain Inherent Data: From Relay Chain to Message Processing
 
+> **Part of [Section 10.10: Deep Dive: ParachainSystem::set_validation_data](./parachain-block-lifecycle.md#1010-deep-dive-parachainsystemset_validation_data)** in the Parachain Block Lifecycle document.
+
 ## Table of Contents
 
 - [Parachain Inherent Data: From Relay Chain to Message Processing](#parachain-inherent-data-from-relay-chain-to-message-processing)

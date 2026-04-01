@@ -30,6 +30,7 @@
     - [10.7. Accessing the Timestamp from Other Pallets](#107-accessing-the-timestamp-from-other-pallets)
     - [10.8. Real-World Inherent Use Cases](#108-real-world-inherent-use-cases)
     - [10.9. The apply\_inherents Function](#109-the-apply_inherents-function)
+    - [10.10. Deep Dive: ParachainSystem::set\_validation\_data](#1010-deep-dive-parachainsystemset_validation_data)
   - [11. Applying Transactions: apply\_extrinsics](#11-applying-transactions-apply_extrinsics)
     - [Soft Deadline vs Hard Deadline](#soft-deadline-vs-hard-deadline)
   - [12. The Transaction Pool and Prioritization](#12-the-transaction-pool-and-prioritization)
@@ -774,6 +775,21 @@ fn apply_inherents(
   - **Other error**: Unexpected error on a non-mandatory inherent. Dropped with a warning.
 
 The mandatory/non-mandatory distinction comes from each pallet's `is_inherent_required()` implementation.
+
+### 10.10. Deep Dive: ParachainSystem::set_validation_data
+
+Just as `Timestamp::set` is a critical inherent for any Substrate chain, `ParachainSystem::set_validation_data` is the **mandatory inherent for parachains**. It brings in data from the relay chain: the validation data, state proof, DMP messages, and HRMP messages.
+
+This deep dive is extensive enough to warrant its own document:
+
+**→ [Parachain Inherent Data and XCM Processing](./parachain-inherent-data-and-xcm-processing.md)**
+
+The document covers:
+- **10.10.1.** How the Collator Fetches Relay Chain Data
+- **10.10.2.** The Relay Chain State Proof
+- **10.10.3.** Processing DMP Messages
+- **10.10.4.** Processing HRMP Messages
+- **10.10.5.** When Messages Actually Execute
 
 ---
 
