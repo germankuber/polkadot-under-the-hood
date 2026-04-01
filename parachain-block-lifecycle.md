@@ -57,31 +57,36 @@
     - [OverlayedChanges::storage\_root](#overlayedchangesstorage_root)
   - [22. full\_storage\_root: Hierarchical Trie](#22-full_storage_root-hierarchical-trie)
   - [23. Sealing, Local Import, and Submission to the Relay Chain](#23-sealing-local-import-and-submission-to-the-relay-chain)
-  - [24. Persistence to RocksDB: execute\_and\_import\_block](#24-persistence-to-rocksdb-execute_and_import_block)
-  - [25. try\_commit\_operation: The Atomic Write](#25-try_commit_operation-the-atomic-write)
+  - [24. Collation Task: The Final Step of the Collator](#24-collation-task-the-final-step-of-the-collator)
+    - [run\_collation\_task](#run_collation_task)
+    - [handle\_collation\_message](#handle_collation_message)
+    - [What Happens After SubmitCollation](#what-happens-after-submitcollation)
+    - [Connection to the Block Builder Task](#connection-to-the-block-builder-task)
+  - [25. Persistence to RocksDB: execute\_and\_import\_block](#25-persistence-to-rocksdb-execute_and_import_block)
+  - [26. try\_commit\_operation: The Atomic Write](#26-try_commit_operation-the-atomic-write)
     - [commit\_operation](#commit_operation)
     - [Inside try\_commit\_operation](#inside-try_commit_operation)
     - [Database Columns](#database-columns)
-  - [26. The Trie and Pruning](#26-the-trie-and-pruning)
+  - [27. The Trie and Pruning](#27-the-trie-and-pruning)
     - [Trie Nodes Are Not Overwritten](#trie-nodes-are-not-overwritten)
     - [Pruning](#pruning)
-  - [27. Complete Production Cycle Summary](#27-complete-production-cycle-summary)
+  - [28. Complete Production Cycle Summary](#28-complete-production-cycle-summary)
 - [Part III: Supplementary Concepts](#part-iii-supplementary-concepts)
-  - [28. Weight System: The 2D Model](#28-weight-system-the-2d-model)
+  - [29. Weight System: The 2D Model](#29-weight-system-the-2d-model)
     - [Why Two Dimensions](#why-two-dimensions)
     - [Weight Structure](#weight-structure)
     - [How Weights Are Determined](#how-weights-are-determined)
     - [CheckWeight Extension](#checkweight-extension)
     - [Block Limits Configuration](#block-limits-configuration)
     - [Weight in Parachains: The PoV Constraint](#weight-in-parachains-the-pov-constraint)
-  - [29. Events System](#29-events-system)
+  - [30. Events System](#30-events-system)
     - [What Are Events](#what-are-events)
     - [Depositing Events](#depositing-events)
     - [Event Storage](#event-storage)
     - [The Event Lifecycle](#the-event-lifecycle)
     - [System Events](#system-events)
     - [Querying Events](#querying-events)
-  - [30. Header Structure and Digest](#30-header-structure-and-digest)
+  - [31. Header Structure and Digest](#31-header-structure-and-digest)
     - [The Header Fields](#the-header-fields)
     - [Digest Items](#digest-items)
     - [PreRuntime Digest: Aura Slot](#preruntime-digest-aura-slot)
@@ -1449,7 +1454,176 @@ The `collation_task` receives it and sends the block + PoV to the relay chain va
 
 ---
 
-## 24. Persistence to RocksDB: execute_and_import_block
+## 24. Collation Task: The Final Step of the Collator
+
+After the block builder task constructs a block, seals it, imports it locally, and sends it through the async channel, the **collation task** picks it up. This is the last piece of the collator's work: it packages the block as a collation (block + compressed PoV) and submits it to the relay chain's Overseer. Once submitted, the collator's job is done.
+
+**File**: `cumulus/client/consensus/aura/src/collators/slot_based/collation_task.rs`
+
+This is still collator code (`cumulus/client/`), not relay chain code.
+
+### run_collation_task
+
+```rust
+pub async fn run_collation_task<Block, RClient, CS>(
+    Params {
+        relay_client,
+        collator_key,
+        para_id,
+        reinitialize,
+        collator_service,
+        mut collator_receiver,
+        mut block_import_handle,
+        export_pov,
+    }: Params<Block, RClient, CS>,
+) {
+    let Ok(mut overseer_handle) = relay_client.overseer_handle() else {
+        tracing::error!(target: LOG_TARGET, "Failed to get overseer handle.");
+        return;
+    };
+
+    cumulus_client_collator::initialize_collator_subsystems(
+        &mut overseer_handle,
+        collator_key,
+        para_id,
+        reinitialize,
+    )
+    .await;
+
+    loop {
+        futures::select! {
+            collator_message = collator_receiver.next() => {
+                let Some(message) = collator_message else {
+                    return;
+                };
+
+                handle_collation_message(
+                    message, &collator_service, &mut overseer_handle,
+                    relay_client.clone(), export_pov.clone()
+                ).await;
+            },
+            block_import_msg = block_import_handle.next().fuse() => {
+                // TODO: Implement me.
+                let _ = block_import_msg;
+            }
+        }
+    }
+}
+```
+
+**Step by Step:**
+
+- **Get the Overseer handle**: The Overseer is the central orchestrator of all subsystems in the Polkadot node. The collator runs a relay chain node internally (light client or full node) to communicate with the relay chain. The `overseer_handle` is the entry point to that world.
+
+- **Initialize collator subsystems**: `initialize_collator_subsystems` registers this collator with the relay chain's collation generation subsystem. It tells the relay chain "I'm a collator for para_id X, here's my key." This only needs to happen once (or again if transitioning to Aura, controlled by the `reinitialize` flag).
+
+- **Main loop**: Waits for messages on the channel from the block builder task. When a `CollatorMessage` arrives (the block we just built), it calls `handle_collation_message`. This runs concurrently with a `block_import_handle` listener (currently unimplemented).
+
+### handle_collation_message
+
+```rust
+async fn handle_collation_message<Block: BlockT, RClient: RelayChainInterface + Clone + 'static>(
+    message: CollatorMessage<Block>,
+    collator_service: &impl CollatorServiceInterface<Block>,
+    overseer_handle: &mut OverseerHandle,
+    relay_client: RClient,
+    export_pov: Option<PathBuf>,
+) {
+    let CollatorMessage {
+        parent_header,
+        parachain_candidate,
+        validation_code_hash,
+        relay_parent,
+        core_index,
+        max_pov_size,
+    } = message;
+
+    let hash = parachain_candidate.block.header().hash();
+    let number = *parachain_candidate.block.header().number();
+
+    // 1. Build the collation
+    let (collation, block_data) =
+        match collator_service.build_collation(&parent_header, hash, parachain_candidate) {
+            Some(collation) => collation,
+            None => {
+                tracing::warn!(target: LOG_TARGET, "Unable to build collation.");
+                return;
+            },
+        };
+
+    // 2. Log PoV size
+    if let MaybeCompressedPoV::Compressed(ref pov) = collation.proof_of_validity {
+        tracing::info!(
+            target: LOG_TARGET,
+            "Compressed PoV size: {}kb",
+            pov.block_data.0.len() as f64 / 1024f64,
+        );
+    }
+
+    // 3. Submit to relay chain via Overseer
+    overseer_handle
+        .send_msg(
+            CollationGenerationMessage::SubmitCollation(SubmitCollationParams {
+                relay_parent,
+                collation,
+                parent_head: parent_header.encode().into(),
+                validation_code_hash,
+                core_index,
+                result_sender: None,
+                scheduling_parent: None,
+            }),
+            "SubmitCollation",
+        )
+        .await;
+}
+```
+
+**Step by Step:**
+
+1. **`build_collation`**: Takes the parachain candidate (block + storage proof) and packages it into a `Collation`. The collation contains the block header, the extrinsics, and the **compressed PoV** (Proof of Validity). The PoV is the storage proof recorded during block construction by the `ProofSizeExt` — it contains only the parts of storage that were accessed during execution, not the entire state.
+
+2. **Log PoV size**: Logs the compressed PoV size. This is important because the relay chain enforces `max_pov_size`. If the PoV exceeds this limit, validators will reject the collation.
+
+3. **`SubmitCollation`**: This is where the collator's work ends. It sends a `CollationGenerationMessage::SubmitCollation` to the Overseer. The parameters include:
+   - **`relay_parent`**: Which relay chain block this collation is built on top of.
+   - **`collation`**: The block + compressed PoV.
+   - **`parent_head`**: The encoded parent header of the parachain block.
+   - **`validation_code_hash`**: Hash of the WASM runtime, so validators know which code to use when re-executing the block for verification.
+   - **`core_index`**: Which execution core on the relay chain this parachain is assigned to.
+
+### What Happens After SubmitCollation
+
+Once `send_msg` is called, the message enters the relay chain's subsystem pipeline. This is no longer collator code — it's relay chain validator code in `polkadot/node/`. The validators will:
+
+1. Receive the collation via the collator protocol subsystem.
+2. Re-execute the parachain block using only the PoV (without having the complete parachain state).
+3. Verify the state root matches.
+4. Distribute PoV chunks among validators for availability.
+5. If validation passes, include the parachain block in the relay chain.
+6. Finalize with GRANDPA.
+
+This is outside the scope of the collator and would be a separate analysis of the relay chain's validation pipeline.
+
+### Connection to the Block Builder Task
+
+This task receives messages from the block builder task through the async channel set up in the collator entry point (`slot_based/mod.rs`):
+
+```
+block_builder_task                          collation_task
+      |                                          |
+      | builds block                             |
+      | seals it                                 |
+      | imports locally                          |
+      | sends CollatorMessage ──── channel ────> |
+      |                                          | receives message
+      |                                          | build_collation (package block + PoV)
+      |                                          | SubmitCollation to Overseer
+      |                                          | (collator's job is done)
+```
+
+---
+
+## 25. Persistence to RocksDB: execute_and_import_block
 
 `import_block` triggers the persistence pipeline.
 
@@ -1485,7 +1659,7 @@ self.backend.commit_operation(op)?;
 
 ---
 
-## 25. try_commit_operation: The Atomic Write
+## 26. try_commit_operation: The Atomic Write
 
 **File**: `substrate/client/db/src/lib.rs`
 
@@ -1555,7 +1729,7 @@ A single call that writes everything to RocksDB atomically: header, body, justif
 
 ---
 
-## 26. The Trie and Pruning
+## 27. The Trie and Pruning
 
 ### Trie Nodes Are Not Overwritten
 
@@ -1592,7 +1766,7 @@ Attempting `state_at(old_block)` on a node with pruning fails with "State alread
 
 ---
 
-## 27. Complete Production Cycle Summary
+## 28. Complete Production Cycle Summary
 
 ```
  1. Collator waits for next slot (slot_based/block_builder_task.rs)
@@ -1655,7 +1829,7 @@ Attempting `state_at(old_block)` on a node with pruning fails with "State alread
 
 ---
 
-## 28. Weight System: The 2D Model
+## 29. Weight System: The 2D Model
 
 ### Why Two Dimensions
 
@@ -1846,7 +2020,7 @@ If transactions collectively read enough storage to exceed the PoV limit, subseq
 
 ---
 
-## 29. Events System
+## 30. Events System
 
 ### What Are Events
 
@@ -2024,7 +2198,7 @@ api.query.system.events((events) => {
 
 ---
 
-## 30. Header Structure and Digest
+## 31. Header Structure and Digest
 
 ### The Header Fields
 
