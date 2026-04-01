@@ -1,5 +1,9 @@
 # Polkadot Under the Hood
 
+<p align="center">
+  <img src="./Polkadot_Logo.jpg" alt="Polkadot Logo" width="200">
+</p>
+
 Deep dives into Polkadot/Substrate internals with detailed code analysis and line-by-line explanations.
 
 ## Contents
