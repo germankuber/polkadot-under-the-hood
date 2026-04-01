@@ -52,6 +52,7 @@
   - [18. The Dispatch to the Pallet](#18-the-dispatch-to-the-pallet)
     - [Two-Level Routing](#two-level-routing)
   - [19. Block Finalization: build and finalize\_block](#19-block-finalization-build-and-finalize_block)
+    - [19.1. Deep Dive: XCM Message Execution in on\_idle](#191-deep-dive-xcm-message-execution-in-on_idle)
   - [20. frame\_system::Pallet::finalize](#20-frame_systempalletfinalize)
   - [21. Storage Root Calculation](#21-storage-root-calculation)
     - [The Host Function](#the-host-function)
@@ -1289,10 +1290,27 @@ pub fn finalize_block() -> HeaderFor<System> {
 
 - **`note_finished_extrinsics`**: Marks that no more extrinsics will enter.
 - **`PostTransactions`**: Hook that runs after all transactions.
-- **`on_idle`**: If weight remains in the block, pallets can use it for background work (cleanup, garbage collection, etc.).
+- **`on_idle`**: If weight remains in the block, pallets can use it for background work. **This is where XCM messages execute** — see [Section 19.1](#191-deep-dive-xcm-message-execution-in-on_idle).
 - **`on_finalize`**: Runs the `on_finalize` hook for all pallets. Here `pallet-timestamp` clears `DidUpdate` for the next block.
 - **`maybe_apply_pending_code_upgrade`**: If there was a `set_code` during the block (runtime upgrade), it's applied here.
 - **`finalize()`**: Calculates the state root and returns the final header.
+
+### 19.1. Deep Dive: XCM Message Execution in on_idle
+
+The `Self::on_idle_hook(block_number)` call triggers `pallet-message-queue::on_idle`, which processes all the DMP and HRMP messages that were enqueued during `set_validation_data` (see [Section 10.10](#1010-deep-dive-parachainsystemset_validation_data)).
+
+This is where XCM messages actually **execute** — the `XcmExecutor` processes each instruction (`WithdrawAsset`, `DepositAsset`, `Transact`, etc.) using the remaining block weight as budget.
+
+This deep dive is extensive enough to warrant its own document:
+
+**→ [XCM Message Execution Pipeline](./xcm-message-execution-pipeline.md)**
+
+The document covers:
+- **19.1.1.** The on_idle hook and weight calculation
+- **19.1.2.** pallet-message-queue round-robin processing
+- **19.1.3.** Page and message servicing
+- **19.1.4.** XcmExecutor: the XCM virtual machine
+- **19.1.5.** Instruction processing (WithdrawAsset, DepositAsset, Transact, etc.)
 
 ---
 

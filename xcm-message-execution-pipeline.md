@@ -1,5 +1,7 @@
 # XCM Message Execution: The on_idle Processing Pipeline
 
+> **Part of [Section 19.1: Deep Dive: XCM Message Execution in on_idle](./parachain-block-lifecycle.md#191-deep-dive-xcm-message-execution-in-on_idle)** in the Parachain Block Lifecycle document.
+
 ## Table of Contents
 
 - [XCM Message Execution: The on\_idle Processing Pipeline](#xcm-message-execution-the-on_idle-processing-pipeline)
