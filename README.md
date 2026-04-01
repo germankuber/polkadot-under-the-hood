@@ -10,9 +10,9 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 
 | Document | Description |
 |----------|-------------|
-| [Parachain Block Lifecycle](./parachain-block-lifecycle.md) | Complete lifecycle of a block in a Substrate parachain — from collator slot claim through runtime execution, storage root calculation, and persistence to RocksDB |
-| [Parachain Inherent Data and XCM Processing](./parachain-inherent-data-and-xcm-processing.md) | How parachains receive data from the relay chain — fetching DMP/HRMP messages, state proof verification, and message queue processing |
-| [XCM Message Execution Pipeline](./xcm-message-execution-pipeline.md) | How XCM messages execute during on_idle — from pallet-message-queue through XcmExecutor instruction processing |
+| [Parachain Block Lifecycle](./docs/parachain-block-lifecycle.md) | Complete lifecycle of a block in a Substrate parachain — from collator slot claim through runtime execution, storage root calculation, and persistence to RocksDB |
+| [Parachain Inherent Data and XCM Processing](./docs/parachain-inherent-data-and-xcm-processing.md) | How parachains receive data from the relay chain — fetching DMP/HRMP messages, state proof verification, and message queue processing |
+| [XCM Message Execution Pipeline](./docs/xcm-message-execution-pipeline.md) | How XCM messages execute during on_idle — from pallet-message-queue through XcmExecutor instruction processing |
 
 ## About
 
