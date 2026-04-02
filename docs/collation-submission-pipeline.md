@@ -20,7 +20,14 @@ All of this code still runs **inside the collator process**. The collator runs a
 - [25.8. Advertising to Validators: advertise_collation](#258-advertising-to-validators-advertise_collation)
 - [25.9. PoV Delivery: The Request/Response Protocol](#259-pov-delivery-the-requestresponse-protocol)
 - [25.10. The Core Index: How the Collator Knows Its Core](#2510-the-core-index-how-the-collator-knows-its-core)
-- [25.11. Multiple Collators: The Race Condition](#2511-multiple-collators-the-race-condition)
+- [25.11. Collator Consensus and Slot Assignment](#2511-collator-consensus-and-slot-assignment)
+  - [25.11.1. When Does the Consensus Mechanism Activate?](#25111-when-does-the-consensus-mechanism-activate)
+  - [25.11.2. How Aura Slot Assignment Works](#25112-how-aura-slot-assignment-works)
+  - [25.11.3. The claim_slot Function: Round-Robin Assignment](#25113-the-claim_slot-function-round-robin-assignment)
+  - [25.11.4. Where Are Authorities and Keys Stored?](#25114-where-are-authorities-and-keys-stored)
+  - [25.11.5. When Does Competition Actually Happen?](#25115-when-does-competition-actually-happen)
+  - [25.11.6. Alternative Consensus Mechanisms](#25116-alternative-consensus-mechanisms)
+  - [25.11.7. Why Multiple Collators?](#25117-why-multiple-collators)
 - [25.12. Summary: Complete Collator Pipeline](#2512-summary-complete-collator-pipeline)
 
 ---
@@ -641,20 +648,251 @@ The same `core_index` determined at the start is used throughout: to build the c
 
 ---
 
-## 25.11. Multiple Collators: The Race Condition
+## 25.11. Collator Consensus and Slot Assignment
 
-When multiple collators exist for the same parachain, all of them:
+A common misconception is that all collators compete to produce every block. In reality, **parachains have their own consensus mechanism** that determines which collator produces in each slot. The most common is **Aura (Authority Round)**, which assigns exactly one collator per slot via round-robin.
 
-1. Detect the same slot.
-2. Build their own block (potentially with different transactions, in different order).
-3. Execute the full pipeline: inherents → transactions → finalize → seal → import.
-4. Send `AdvertiseCollation` to the same backing group validators.
+### 25.11.1. When Does the Consensus Mechanism Activate?
 
-It's a race: the collator whose advertisement reaches a validator first, whose PoV is requested and validated first, gets its candidate seconded. The other candidates are discarded because the backing group already has a valid candidate for that slot.
+The parachain's consensus mechanism activates in the `can_build_upon` function we saw in the block builder task:
 
-There is no coordination or voting between collators. Each one builds independently, and the fastest one wins the inclusion in the relay chain.
+**File**: `cumulus/client/consensus/aura/src/collators/mod.rs`
 
-Having multiple collators is primarily about **liveness** (if one goes down, another can produce), not about security. Security comes from the relay chain validators, not from collators.
+```rust
+// 7. Check if it's our turn to produce in this slot
+let slot_claim = match crate::collators::can_build_upon::<_, _, P>(
+    para_slot.slot, relay_slot, para_slot.timestamp,
+    parent_hash, included_header_hash, &*para_client, &keystore,
+).await {
+    Some(slot) => slot,
+    None => { continue; },  // Not our turn — skip to next slot
+};
+```
+
+If `can_build_upon` returns `None`, the collator skips this slot entirely. It doesn't build, doesn't execute, doesn't send anything. Only the collator that gets `Some(slot_claim)` proceeds with block production.
+
+### 25.11.2. How Aura Slot Assignment Works
+
+**File**: `cumulus/client/consensus/aura/src/collators/mod.rs`
+
+```rust
+async fn can_build_upon<Block: BlockT, Client, P>(
+	para_slot: Slot,
+	relay_slot: Slot,
+	timestamp: Timestamp,
+	parent_hash: Block::Hash,
+	included_block: Block::Hash,
+	client: &Client,
+	keystore: &KeystorePtr,
+) -> Option<SlotClaim<P::Public>>
+where
+	Client: ProvideRuntimeApi<Block>,
+	Client::Api: AuraApi<Block, P::Public> + AuraUnincludedSegmentApi<Block> + ApiExt<Block>,
+	P: Pair,
+	P::Public: Codec,
+	P::Signature: Codec,
+{
+	let mut runtime_api = client.runtime_api();
+	runtime_api.set_call_context(sp_core::traits::CallContext::Onchain);
+
+	// 1. Get the list of authorities from the runtime
+	let authorities = runtime_api.authorities(parent_hash).ok()?;
+
+	// 2. Check if we are the assigned author for this slot
+	let author_pub = aura_internal::claim_slot::<P>(para_slot, &authorities, keystore).await?;
+
+	// 3. If parent is the included block, unincluded segment is empty — can build
+	if parent_hash == included_block {
+		return Some(SlotClaim::unchecked::<P>(author_pub, para_slot, timestamp));
+	}
+
+	// 4. Check API version for slot type
+	let api_version = runtime_api
+		.api_version::<dyn AuraUnincludedSegmentApi<Block>>(parent_hash)
+		.ok()
+		.flatten()?;
+
+	let slot = if api_version > 1 { relay_slot } else { para_slot };
+
+	// 5. Ask runtime if there's capacity in the unincluded segment
+	runtime_api
+		.can_build_upon(parent_hash, included_block, slot)
+		.ok()?
+		.then(|| SlotClaim::unchecked::<P>(author_pub, para_slot, timestamp))
+}
+```
+
+**Step 1** gets the authorities (public keys of all authorized collators) from `pallet-aura` in the runtime.
+
+**Step 2** is where Aura consensus happens — `claim_slot` determines if this collator should produce. If the collator's key is not assigned to this slot, `claim_slot` returns `None` and the function exits early.
+
+**Step 3-5** check if there's capacity in the unincluded segment (for async backing scenarios where multiple blocks can be pending inclusion).
+
+### 25.11.3. The claim_slot Function: Round-Robin Assignment
+
+**File**: `substrate/client/consensus/aura/src/standalone.rs`
+
+```rust
+pub async fn claim_slot<P: Pair>(
+	slot: Slot,
+	authorities: &[AuthorityId<P>],
+	keystore: &KeystorePtr,
+) -> Option<P::Public> {
+	let expected_author = slot_author::<P>(slot, authorities);
+	expected_author.and_then(|p| {
+		if keystore.has_keys(&[(p.to_raw_vec(), sp_application_crypto::key_types::AURA)]) {
+			Some(p.clone())
+		} else {
+			None
+		}
+	})
+}
+```
+
+The function first calculates who SHOULD produce (`slot_author`), then checks if the local keystore has the private key for that author.
+
+**File**: `substrate/client/consensus/aura/src/standalone.rs`
+
+```rust
+pub fn slot_author<P: Pair>(slot: Slot, authorities: &[AuthorityId<P>]) -> Option<&AuthorityId<P>> {
+	if authorities.is_empty() {
+		return None;
+	}
+
+	let idx = *slot % (authorities.len() as u64);
+	assert!(
+		idx <= usize::MAX as u64,
+		"It is impossible to have a vector with length beyond the address space; qed",
+	);
+
+	let current_author = authorities.get(idx as usize).expect(
+		"authorities not empty; index constrained to list length;this is a valid index; qed",
+	);
+
+	Some(current_author)
+}
+```
+
+**The formula is `slot % authorities.len()`**. This creates a round-robin:
+
+| Slot | Formula (3 authorities) | Author |
+|------|------------------------|--------|
+| 0    | 0 % 3 = 0              | Collator A |
+| 1    | 1 % 3 = 1              | Collator B |
+| 2    | 2 % 3 = 2              | Collator C |
+| 3    | 3 % 3 = 0              | Collator A |
+| 4    | 4 % 3 = 1              | Collator B |
+| ...  | ...                    | ... |
+
+Each slot has exactly **one** assigned author. The collator checks if its keystore contains the private key for that author. If yes → produce. If no → skip.
+
+### 25.11.4. Where Are Authorities and Keys Stored?
+
+Two separate locations:
+
+**1. Authorities (on-chain)**: The list of authorized collator public keys is stored in the runtime:
+
+```
+pallet_aura::Authorities<T>
+```
+
+This is configured in the genesis (chain spec) and can be updated via:
+- `pallet-collator-selection` (staking-based selection)
+- `pallet-invulnerables` (governance-appointed collators)
+- Direct governance calls
+
+**2. Private Keys (off-chain)**: Each collator stores its private key in the local filesystem:
+
+```
+/path-to-node/chains/<chain-id>/keystore/
+```
+
+Keys are inserted via `author_insertKey` RPC or loaded from files at startup.
+
+`claim_slot` bridges both: it queries the authorities from the runtime, calculates which one should produce, and checks if the local keystore has the corresponding private key.
+
+### 25.11.5. When Does Competition Actually Happen?
+
+Competition between collators (a "race") only occurs in specific scenarios:
+
+**1. Multiple Nodes with Same Key (Misconfiguration/Backup)**
+
+If two collator nodes have the same Aura key in their keystore, both will pass `claim_slot` for the same slot. Both will build blocks and race to get theirs included first.
+
+```
+Collator Node 1 (keystore: Alice) ─┐
+                                   ├─> Both claim slot 5 ─> RACE
+Collator Node 2 (keystore: Alice) ─┘
+```
+
+This is typically a misconfiguration, but sometimes intentional for redundancy (hot backup).
+
+**2. Async Backing with AllowMultipleBlocksPerSlot**
+
+With async backing enabled, a collator may produce multiple blocks in the same slot to fill the unincluded segment:
+
+```rust
+// In the runtime configuration
+type AllowMultipleBlocksPerSlot = ConstBool<true>;
+```
+
+This allows the same collator to produce Velocity + 1 candidates per slot while there's remaining capacity.
+
+**3. It's NOT Proof of Work**
+
+There's no mining, no hash computation race. When multiple collators produce for the same slot, it's simply a **latency race** — the first advertisement to reach a validator and get seconded wins. The others are discarded.
+
+### 25.11.6. Alternative Consensus Mechanisms
+
+A parachain can implement different consensus mechanisms by replacing the slot assignment logic:
+
+**BABE (Blind Assignment for Blockchain Extension)**
+
+Instead of deterministic round-robin, uses a VRF (Verifiable Random Function):
+
+```rust
+// Pseudocode
+let vrf_output = vrf_sign(slot, secret_key);
+if vrf_output < threshold {
+    // I can produce in this slot
+}
+```
+
+Multiple collators might pass the threshold → competition. Or none might pass → empty slot.
+
+**Proof of Stake Selection**
+
+The set of authorities is dynamic based on stake:
+
+1. Collators stake tokens via `pallet-collator-selection`
+2. Each session, the top N by stake become the active set
+3. Their public keys are written to `pallet_aura::Authorities`
+4. Slot assignment still uses Aura round-robin, but among staked collators
+
+```
+pallet-collator-selection (who CAN produce) → pallet-aura (who produces WHEN)
+```
+
+**Custom Mechanism**
+
+To implement a fully custom consensus:
+
+1. **Runtime**: Replace `pallet-aura` with your own pallet implementing the `AuraApi` runtime API (or a custom API)
+2. **Node**: Replace `claim_slot` logic in `can_build_upon` with your custom verification
+
+The rest of the pipeline (block construction, collation submission, validation) remains unchanged.
+
+### 25.11.7. Why Multiple Collators?
+
+With Aura properly configured, each slot has one assigned collator — no competition. So why run multiple collators?
+
+**Liveness**: If the assigned collator for slot N is offline, no block is produced for that slot. Having multiple collators ensures that most slots have an online producer.
+
+**Redundancy**: Running backup nodes with the same key provides failover (though creates the race condition described above).
+
+**Decentralization**: More collators (with different keys) means the parachain doesn't depend on a single operator.
+
+**Not for Security**: Collators don't provide security — they just propose blocks. Security comes from relay chain validators who verify every block. A malicious collator can't include invalid transactions because validators will reject the collation.
 
 ---
 

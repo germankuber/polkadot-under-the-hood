@@ -76,7 +76,7 @@
     - [25.8. Advertising to Validators: advertise\_collation](./collation-submission-pipeline.md#258-advertising-to-validators-advertise_collation)
     - [25.9. PoV Delivery: The Request/Response Protocol](./collation-submission-pipeline.md#259-pov-delivery-the-requestresponse-protocol)
     - [25.10. The Core Index: How the Collator Knows Its Core](./collation-submission-pipeline.md#2510-the-core-index-how-the-collator-knows-its-core)
-    - [25.11. Multiple Collators: The Race Condition](./collation-submission-pipeline.md#2511-multiple-collators-the-race-condition)
+    - [25.11. Collator Consensus and Slot Assignment](./collation-submission-pipeline.md#2511-collator-consensus-and-slot-assignment)
     - [25.12. Summary: Complete Collator Pipeline](./collation-submission-pipeline.md#2512-summary-complete-collator-pipeline)
   - [26. Persistence to RocksDB: execute\_and\_import\_block](#26-persistence-to-rocksdb-execute_and_import_block)
   - [27. try\_commit\_operation: The Atomic Write](#27-try_commit_operation-the-atomic-write)
@@ -1705,7 +1705,7 @@ This section covers the second half of the collator's work, starting after the b
 - [25.8. Advertising to Validators: advertise_collation](./collation-submission-pipeline.md#258-advertising-to-validators-advertise_collation)
 - [25.9. PoV Delivery: The Request/Response Protocol](./collation-submission-pipeline.md#259-pov-delivery-the-requestresponse-protocol)
 - [25.10. The Core Index: How the Collator Knows Its Core](./collation-submission-pipeline.md#2510-the-core-index-how-the-collator-knows-its-core)
-- [25.11. Multiple Collators: The Race Condition](./collation-submission-pipeline.md#2511-multiple-collators-the-race-condition)
+- [25.11. Collator Consensus and Slot Assignment](./collation-submission-pipeline.md#2511-collator-consensus-and-slot-assignment)
 - [25.12. Summary: Complete Collator Pipeline](./collation-submission-pipeline.md#2512-summary-complete-collator-pipeline)
 
 ---
