@@ -14,6 +14,7 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 | [Parachain Inherent Data and XCM Processing](./docs/parachain-inherent-data-and-xcm-processing.md) | How parachains receive data from the relay chain — fetching DMP/HRMP messages, state proof verification, and message queue processing |
 | [XCM Message Execution Pipeline](./docs/xcm-message-execution-pipeline.md) | How XCM messages execute during on_idle — from pallet-message-queue through XcmExecutor instruction processing |
 | [XCM Reserve Transfer Flow](./docs/xcm-reserve-transfer-flow.md) | Complete flow of reserve-backed asset transfers between parachains |
+| [Collation Submission Pipeline](./docs/collation-submission-pipeline.md) | From candidate receipt construction through erasure coding, validator discovery, and PoV delivery |
 
 ## About
 
