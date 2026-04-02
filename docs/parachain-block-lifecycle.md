@@ -53,6 +53,7 @@
     - [Two-Level Routing](#two-level-routing)
   - [19. Block Finalization: build and finalize\_block](#19-block-finalization-build-and-finalize_block)
     - [19.1. Deep Dive: XCM Message Execution in on\_idle](#191-deep-dive-xcm-message-execution-in-on_idle)
+    - [19.2. Deep Dive: XCM Reserve Transfer Flow](#192-deep-dive-xcm-reserve-transfer-flow)
   - [20. frame\_system::Pallet::finalize](#20-frame_systempalletfinalize)
   - [21. Storage Root Calculation](#21-storage-root-calculation)
     - [The Host Function](#the-host-function)
@@ -792,6 +793,8 @@ The document covers:
 - **10.10.4.** Processing HRMP Messages
 - **10.10.5.** When Messages Actually Execute
 
+> **See also:** For a complete trace of what happens when these messages execute (e.g., a reserve transfer), see [Section 19.2: XCM Reserve Transfer Flow](#192-deep-dive-xcm-reserve-transfer-flow).
+
 ---
 
 ## 11. Applying Transactions: apply_extrinsics
@@ -1311,6 +1314,21 @@ The document covers:
 - **19.1.3.** Page and message servicing
 - **19.1.4.** XcmExecutor: the XCM virtual machine
 - **19.1.5.** Instruction processing (WithdrawAsset, DepositAsset, Transact, etc.)
+
+### 19.2. Deep Dive: XCM Reserve Transfer Flow
+
+One of the most common XCM use cases is the **reserve transfer** — moving tokens between parachains where one chain acts as the reserve (holds the real tokens) and the other holds a backed representation.
+
+This deep dive traces the complete flow from the user's extrinsic through local execution, message transport, and remote execution:
+
+**→ [XCM Reserve Transfer Flow](./xcm-reserve-transfer-flow.md)**
+
+The document covers:
+- **Part I:** Origin chain — `WithdrawAsset`, `DepositReserveAsset`, sovereign accounts, reanchoring
+- **Part II:** Transport — XCMP delivery, relay chain routing
+- **Part III:** Destination chain — `ReserveAssetDeposited`, `IsReserve` trust check, minting, `DepositAsset`
+- **Part IV:** Reserve Transfer vs Teleport comparison
+- **Part V:** Step-by-step walkthrough with a concrete example
 
 ---
 

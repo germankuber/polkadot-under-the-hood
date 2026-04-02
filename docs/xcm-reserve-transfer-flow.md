@@ -1,6 +1,8 @@
 # XCM Reserve Transfer: Complete Flow from Extrinsic to Token Deposit
 
-> **Deep dive into how a reserve transfer moves tokens between two parachains using the XCM VM, from the user's extrinsic call through local execution, message transport, and remote execution.**
+> **Part of [Section 19.2: Deep Dive: XCM Reserve Transfer Flow](./parachain-block-lifecycle.md#192-deep-dive-xcm-reserve-transfer-flow)** in the Parachain Block Lifecycle document.
+
+Deep dive into how a reserve transfer moves tokens between two parachains using the XCM VM, from the user's extrinsic call through local execution, message transport, and remote execution.
 
 ## Table of Contents
 
