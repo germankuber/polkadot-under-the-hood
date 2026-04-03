@@ -15,6 +15,7 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 | [XCM Message Execution Pipeline](./docs/xcm-message-execution-pipeline.md) | How XCM messages execute during on_idle — from pallet-message-queue through XcmExecutor instruction processing |
 | [XCM Reserve Transfer Flow](./docs/xcm-reserve-transfer-flow.md) | Complete flow of reserve-backed asset transfers between parachains |
 | [Collation Submission Pipeline](./docs/collation-submission-pipeline.md) | From candidate receipt construction through erasure coding, validator discovery, and PoV delivery |
+| [Origin Flow: pallet-collective to pallet-treasury](./docs/origin-flow-pallet-collective-to-treasury.md) | How custom origins are created, wrapped into RuntimeOrigin, dispatched, and validated — the universal FRAME pattern |
 
 ## About
 
