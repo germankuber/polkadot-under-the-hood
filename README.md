@@ -16,6 +16,7 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 | [XCM Reserve Transfer Flow](./docs/xcm-reserve-transfer-flow.md) | Complete flow of reserve-backed asset transfers between parachains |
 | [Collation Submission Pipeline](./docs/collation-submission-pipeline.md) | From candidate receipt construction through erasure coding, validator discovery, and PoV delivery |
 | [Origin Flow: pallet-collective to pallet-treasury](./docs/origin-flow-pallet-collective-to-treasury.md) | How custom origins are created, wrapped into RuntimeOrigin, dispatched, and validated — the universal FRAME pattern |
+| [Transaction Pool Deep Dive](./docs/transaction-pool-deep-dive.md) | From RPC submission through validation, pool insertion with dependency resolution, and block inclusion |
 
 ## About
 
