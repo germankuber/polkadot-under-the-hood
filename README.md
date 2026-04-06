@@ -17,6 +17,7 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 | [Collation Submission Pipeline](./docs/collation-submission-pipeline.md) | From candidate receipt construction through erasure coding, validator discovery, and PoV delivery |
 | [Origin Flow: pallet-collective to pallet-treasury](./docs/origin-flow-pallet-collective-to-treasury.md) | How custom origins are created, wrapped into RuntimeOrigin, dispatched, and validated — the universal FRAME pattern |
 | [Transaction Pool Deep Dive](./docs/transaction-pool-deep-dive.md) | From RPC submission through validation, pool insertion with dependency resolution, and block inclusion |
+| [Runtime WASM Injection Deep Dive](./docs/runtime-wasm-injection-deep-dive.md) | How the runtime WASM travels from Rust source code to node execution — compilation, embedding, storage, and executor injection |
 
 ## About
 
