@@ -1,50 +1,71 @@
-# Origin Flow Deep Dive: From pallet-collective to pallet-treasury
+---
+layout:
+  width: wide
+  title:
+    visible: true
+  description:
+    visible: true
+  tableOfContents:
+    visible: true
+  outline:
+    visible: true
+  pagination:
+    visible: true
+  metadata:
+    visible: true
+  tags:
+    visible: true
+---
+
+# Origin Flow: pallet-collective to pallet-treasury
+
+## Origin Flow Deep Dive: From pallet-collective to pallet-treasury
 
 > A step-by-step walkthrough of how a custom origin is born inside `pallet-collective`, transforms into a runtime-level origin, travels through the dispatch system, and gets validated by the destination pallet. More importantly: a deep exploration of the **architectural pattern** that underpins all of FRAME — pallet-local types wrapped into runtime-global enums via auto-generated `From` impls, with trait-based indirection at every boundary.
 
-## Table of Contents
+### Table of Contents
 
-- [Origin Flow Deep Dive: From pallet-collective to pallet-treasury](#origin-flow-deep-dive-from-pallet-collective-to-pallet-treasury)
-  - [Table of Contents](#table-of-contents)
-  - [Introduction](#introduction)
-- [Part I: The Universal Pattern](#part-i-the-universal-pattern)
-  - [1. The Core Architecture: Local Types → Global Enums](#1-the-core-architecture-local-types--global-enums)
-  - [2. From as the Exit Door: How Pallet Types Escape](#2-from-as-the-exit-door-how-pallet-types-escape)
-  - [3. The Constraint Funnel: Trait → Config → Runtime](#3-the-constraint-funnel-trait--config--runtime)
-  - [4. Compiler Inference: How Generic Types Resolve Without Explicit Passing](#4-compiler-inference-how-generic-types-resolve-without-explicit-passing)
-- [Part II: Origin Definition and Registration](#part-ii-origin-definition-and-registration)
-  - [5. Defining the Custom Origin in pallet-collective](#5-defining-the-custom-origin-in-pallet-collective)
-  - [6. Registering the Origin with #\[pallet::origin\]](#6-registering-the-origin-with-palletorigin)
-  - [7. construct\_runtime! Generates the RuntimeOrigin Enum](#7-construct_runtime-generates-the-runtimeorigin-enum)
-  - [8. Automatic From Generation for Each Variant](#8-automatic-from-generation-for-each-variant)
-- [Part III: Wiring Origins and Calls in Config](#part-iii-wiring-origins-and-calls-in-config)
-  - [9. Wiring RuntimeOrigin in the Pallet Config](#9-wiring-runtimeorigin-in-the-pallet-config)
-  - [10. The Dispatchable Trait: How dispatch Knows Its Origin Type](#10-the-dispatchable-trait-how-dispatch-knows-its-origin-type)
-  - [11. The Proposal: A Runtime Call Stored On-Chain](#11-the-proposal-a-runtime-call-stored-on-chain)
-- [Part IV: The Dispatch Journey](#part-iv-the-dispatch-journey)
-  - [12. Voting Ends: Constructing the Origin](#12-voting-ends-constructing-the-origin)
-  - [13. The .into() Call: From Local Origin to Global Origin](#13-the-into-call-from-local-origin-to-global-origin)
-  - [14. proposal.dispatch(origin): Entering the Runtime Dispatch](#14-proposaldispatchorigin-entering-the-runtime-dispatch)
-  - [15. Runtime Dispatch: The Call Router](#15-runtime-dispatch-the-call-router)
-  - [16. Pallet-Level Dispatch: Reaching the Target Function](#16-pallet-level-dispatch-reaching-the-target-function)
-- [Part V: Origin Validation](#part-v-origin-validation)
-  - [17. All Pallet Functions Receive RuntimeOrigin, Never a Local Origin](#17-all-pallet-functions-receive-runtimeorigin-never-a-local-origin)
-  - [18. EnsureOrigin: A Validator, Not an Origin](#18-ensureorigin-a-validator-not-an-origin)
-  - [19. OriginTrait and PalletsOrigin: Opening the RuntimeOrigin Envelope](#19-origintrait-and-palletsorigin-opening-the-runtimeorigin-envelope)
-  - [20. EitherOfDiverse: Composing Multiple Validators](#20-eitherofdiverse-composing-multiple-validators)
-  - [21. EnsureRoot: Checking for Root Origin](#21-ensureroot-checking-for-root-origin)
-  - [22. EnsureProportionMoreThan: Checking Collective Approval](#22-ensureproportionmorethan-checking-collective-approval)
-- [Part VI: Reuse and Extension Patterns](#part-vi-reuse-and-extension-patterns)
-  - [23. The Instance Parameter: Supporting Multiple Collectives](#23-the-instance-parameter-supporting-multiple-collectives)
-  - [24. DefaultVote: Configurable Abstention Strategy](#24-defaultvote-configurable-abstention-strategy)
-  - [25. Where to Place Custom Trait Implementations](#25-where-to-place-custom-trait-implementations)
-- [Part VII: Summary](#part-vii-summary)
-  - [26. Complete Flow Diagram](#26-complete-flow-diagram)
-  - [27. Key Architectural Principles](#27-key-architectural-principles)
+* [Origin Flow Deep Dive: From pallet-collective to pallet-treasury](origin-flow-pallet-collective-to-treasury.md#origin-flow-deep-dive-from-pallet-collective-to-pallet-treasury)
+  * [Table of Contents](origin-flow-pallet-collective-to-treasury.md#table-of-contents)
+  * [Introduction](origin-flow-pallet-collective-to-treasury.md#introduction)
+* [Part I: The Universal Pattern](origin-flow-pallet-collective-to-treasury.md#part-i-the-universal-pattern)
+  * [1. The Core Architecture: Local Types → Global Enums](origin-flow-pallet-collective-to-treasury.md#1-the-core-architecture-local-types--global-enums)
+  * [2. From as the Exit Door: How Pallet Types Escape](origin-flow-pallet-collective-to-treasury.md#2-from-as-the-exit-door-how-pallet-types-escape)
+  * [3. The Constraint Funnel: Trait → Config → Runtime](origin-flow-pallet-collective-to-treasury.md#3-the-constraint-funnel-trait--config--runtime)
+  * [4. Compiler Inference: How Generic Types Resolve Without Explicit Passing](origin-flow-pallet-collective-to-treasury.md#4-compiler-inference-how-generic-types-resolve-without-explicit-passing)
+* [Part II: Origin Definition and Registration](origin-flow-pallet-collective-to-treasury.md#part-ii-origin-definition-and-registration)
+  * [5. Defining the Custom Origin in pallet-collective](origin-flow-pallet-collective-to-treasury.md#5-defining-the-custom-origin-in-pallet-collective)
+  * [6. Registering the Origin with #\[pallet::origin\]](origin-flow-pallet-collective-to-treasury.md#6-registering-the-origin-with-palletorigin)
+  * [7. construct\_runtime! Generates the RuntimeOrigin Enum](origin-flow-pallet-collective-to-treasury.md#7-construct_runtime-generates-the-runtimeorigin-enum)
+  * [8. Automatic From Generation for Each Variant](origin-flow-pallet-collective-to-treasury.md#8-automatic-from-generation-for-each-variant)
+* [Part III: Wiring Origins and Calls in Config](origin-flow-pallet-collective-to-treasury.md#part-iii-wiring-origins-and-calls-in-config)
+  * [9. Wiring RuntimeOrigin in the Pallet Config](origin-flow-pallet-collective-to-treasury.md#9-wiring-runtimeorigin-in-the-pallet-config)
+  * [10. The Dispatchable Trait: How dispatch Knows Its Origin Type](origin-flow-pallet-collective-to-treasury.md#10-the-dispatchable-trait-how-dispatch-knows-its-origin-type)
+  * [11. The Proposal: A Runtime Call Stored On-Chain](origin-flow-pallet-collective-to-treasury.md#11-the-proposal-a-runtime-call-stored-on-chain)
+* [Part IV: The Dispatch Journey](origin-flow-pallet-collective-to-treasury.md#part-iv-the-dispatch-journey)
+  * [12. Voting Ends: Constructing the Origin](origin-flow-pallet-collective-to-treasury.md#12-voting-ends-constructing-the-origin)
+  * [13. The .into() Call: From Local Origin to Global Origin](origin-flow-pallet-collective-to-treasury.md#13-the-into-call-from-local-origin-to-global-origin)
+  * [14. proposal.dispatch(origin): Entering the Runtime Dispatch](origin-flow-pallet-collective-to-treasury.md#14-proposaldispatchorigin-entering-the-runtime-dispatch)
+  * [15. Runtime Dispatch: The Call Router](origin-flow-pallet-collective-to-treasury.md#15-runtime-dispatch-the-call-router)
+  * [16. Pallet-Level Dispatch: Reaching the Target Function](origin-flow-pallet-collective-to-treasury.md#16-pallet-level-dispatch-reaching-the-target-function)
+* [Part V: Origin Validation](origin-flow-pallet-collective-to-treasury.md#part-v-origin-validation)
+  * [17. All Pallet Functions Receive RuntimeOrigin, Never a Local Origin](origin-flow-pallet-collective-to-treasury.md#17-all-pallet-functions-receive-runtimeorigin-never-a-local-origin)
+  * [18. EnsureOrigin: A Validator, Not an Origin](origin-flow-pallet-collective-to-treasury.md#18-ensureorigin-a-validator-not-an-origin)
+  * [19. OriginTrait and PalletsOrigin: Opening the RuntimeOrigin Envelope](origin-flow-pallet-collective-to-treasury.md#19-origintrait-and-palletsorigin-opening-the-runtimeorigin-envelope)
+  * [20. EitherOfDiverse: Composing Multiple Validators](origin-flow-pallet-collective-to-treasury.md#20-eitherofdiverse-composing-multiple-validators)
+  * [21. EnsureRoot: Checking for Root Origin](origin-flow-pallet-collective-to-treasury.md#21-ensureroot-checking-for-root-origin)
+  * [22. EnsureProportionMoreThan: Checking Collective Approval](origin-flow-pallet-collective-to-treasury.md#22-ensureproportionmorethan-checking-collective-approval)
+* [Part VI: Reuse and Extension Patterns](origin-flow-pallet-collective-to-treasury.md#part-vi-reuse-and-extension-patterns)
+  * [23. The Instance Parameter: Supporting Multiple Collectives](origin-flow-pallet-collective-to-treasury.md#23-the-instance-parameter-supporting-multiple-collectives)
+  * [24. DefaultVote: Configurable Abstention Strategy](origin-flow-pallet-collective-to-treasury.md#24-defaultvote-configurable-abstention-strategy)
+  * [25. Where to Place Custom Trait Implementations](origin-flow-pallet-collective-to-treasury.md#25-where-to-place-custom-trait-implementations)
+* [Part VII: Summary](origin-flow-pallet-collective-to-treasury.md#part-vii-summary)
+  * [26. Complete Flow Diagram](origin-flow-pallet-collective-to-treasury.md#26-complete-flow-diagram)
+  * [27. Key Architectural Principles](origin-flow-pallet-collective-to-treasury.md#27-key-architectural-principles)
 
----
+***
 
-## Introduction
+### Introduction
 
 In FRAME-based runtimes, pallets are fully decoupled. They don't import each other or call each other directly. Instead, they communicate through the **origin system**: one pallet produces an origin that encodes "who authorized this action," and another pallet validates that origin to decide whether the action is permitted.
 
@@ -52,21 +73,21 @@ This document traces the complete lifecycle of an origin produced by `pallet-col
 
 But the specific pallets are secondary. The real subject is **the architectural pattern itself**: how FRAME uses Rust's type system to encapsulate pallet-local types inside runtime-global enums, with trait-based indirection at every boundary. This same pattern appears everywhere — origins, events, calls, errors — and understanding it once unlocks understanding of the entire framework.
 
----
+***
 
-# Part I: The Universal Pattern
+## Part I: The Universal Pattern
 
-## 1. The Core Architecture: Local Types → Global Enums
+### 1. The Core Architecture: Local Types → Global Enums
 
 The most important concept in FRAME is this: **every pallet defines its own local types, and the runtime wraps them all into global enums.**
 
 This happens for three core type families:
 
-| Pallet defines | Macro attribute | Runtime generates | Purpose |
-|----------------|-----------------|-------------------|---------|
-| `RawOrigin` | `#[pallet::origin]` | `RuntimeOrigin` enum | Who authorized an action |
-| `Event` | `#[pallet::event]` | `RuntimeEvent` enum | What happened in a block |
-| `Call` | `#[pallet::call]` | `RuntimeCall` enum | What dispatchable functions exist |
+| Pallet defines | Macro attribute     | Runtime generates    | Purpose                           |
+| -------------- | ------------------- | -------------------- | --------------------------------- |
+| `RawOrigin`    | `#[pallet::origin]` | `RuntimeOrigin` enum | Who authorized an action          |
+| `Event`        | `#[pallet::event]`  | `RuntimeEvent` enum  | What happened in a block          |
+| `Call`         | `#[pallet::call]`   | `RuntimeCall` enum   | What dispatchable functions exist |
 
 The mechanism is identical for all three:
 
@@ -85,9 +106,9 @@ Internally, `Event::Approved` is converted via `From` to `RuntimeEvent::Council(
 
 This is not a coincidence — it's the **foundational design pattern** of the entire framework. Once you understand it for origins, you understand it for everything.
 
----
+***
 
-## 2. From as the Exit Door: How Pallet Types Escape
+### 2. From as the Exit Door: How Pallet Types Escape
 
 A pallet's `RawOrigin`, `Event`, or `Call` is just a Rust type defined inside the pallet's module. By itself, **it's an isolated type that nothing outside the pallet can understand**.
 
@@ -112,9 +133,9 @@ This says: "whatever type the runtime assigns as `RuntimeOrigin` must be able to
 
 The reverse direction (`TryInto`) is the **entry door** — it allows validators to reach back into the `RuntimeOrigin` and extract the pallet-specific origin for inspection.
 
----
+***
 
-## 3. The Constraint Funnel: Trait → Config → Runtime
+### 3. The Constraint Funnel: Trait → Config → Runtime
 
 A recurring source of confusion in FRAME code is: "this trait is so generic, how does it end up working with a specific type?" The answer is the **constraint funnel** — each layer adds restrictions, narrowing the type step by step.
 
@@ -153,9 +174,9 @@ pub trait Config: 'static + Eq + Clone {
 
 This is where `RuntimeOrigin` stops being "any type with Debug" and gains its first concrete shape:
 
-- `From<RawOrigin<Self::AccountId>>` — `RuntimeOrigin` must be **constructable from** a `frame_system::RawOrigin`. Direction: `RawOrigin → RuntimeOrigin`. This is what allows `RuntimeOrigin::from(RawOrigin::Root)` or `RuntimeOrigin::from(RawOrigin::Signed(account))`.
-- `Into<Result<RawOrigin<Self::AccountId>, Self::RuntimeOrigin>>` — the reverse: `RuntimeOrigin` must be **unwrappable back into** a `RawOrigin` (returning `Err(self)` if it's not a system origin). This is what `EnsureOrigin` implementations use to inspect what's inside.
-- `OriginTrait` — provides the standard interface (`caller()`, `add_filter()`, etc.).
+* `From<RawOrigin<Self::AccountId>>` — `RuntimeOrigin` must be **constructable from** a `frame_system::RawOrigin`. Direction: `RawOrigin → RuntimeOrigin`. This is what allows `RuntimeOrigin::from(RawOrigin::Root)` or `RuntimeOrigin::from(RawOrigin::Signed(account))`.
+* `Into<Result<RawOrigin<Self::AccountId>, Self::RuntimeOrigin>>` — the reverse: `RuntimeOrigin` must be **unwrappable back into** a `RawOrigin` (returning `Err(self)` if it's not a system origin). This is what `EnsureOrigin` implementations use to inspect what's inside.
+* `OriginTrait` — provides the standard interface (`caller()`, `add_filter()`, etc.).
 
 Every pallet that declares `Config: frame_system::Config` inherits these bounds automatically.
 
@@ -222,15 +243,15 @@ Runtime assignment          →  it's RuntimeOrigin, the auto-generated enum
 
 Each layer narrows without breaking the genericity of the layers above. The trait stays reusable, `frame_system` sets the foundational bounds, the pallet Config stays pallet-generic, and only the runtime pins everything to concrete types.
 
----
+***
 
-## 4. Compiler Inference: How Generic Types Resolve Without Explicit Passing
+### 4. Compiler Inference: How Generic Types Resolve Without Explicit Passing
 
 A common question when reading FRAME code: "where does this generic type get specified? I don't see it being passed anywhere."
 
 Let's trace a real example end-to-end: how `EnsureRoot` ends up knowing that `O = RuntimeOrigin` without anyone telling it.
 
-### Step 1 — The trait `EnsureOrigin` defines the contract with a generic `OuterOrigin`
+#### Step 1 — The trait `EnsureOrigin` defines the contract with a generic `OuterOrigin`
 
 > `substrate/frame/support/src/traits/dispatch.rs:33`
 
@@ -248,7 +269,7 @@ pub trait EnsureOrigin<OuterOrigin> {
 
 Anyone implementing this trait must say: "given an origin of type `OuterOrigin`, I can verify if it's valid and return a `Success` or reject it." The key point: `OuterOrigin` is a **generic parameter on the trait**, not a concrete type yet.
 
-### Step 2 — `EnsureRoot` is a struct that only has `AccountId`
+#### Step 2 — `EnsureRoot` is a struct that only has `AccountId`
 
 > `substrate/frame/system/src/lib.rs:1277`
 
@@ -258,7 +279,7 @@ pub struct EnsureRoot<AccountId>(PhantomData<AccountId>);
 
 Just `AccountId`. No parameter for the origin type. You can't pass `O` when creating this struct.
 
-### Step 3 — The impl adds `O` as a generic that is NOT on the struct
+#### Step 3 — The impl adds `O` as a generic that is NOT on the struct
 
 > `substrate/frame/system/src/lib.rs:1278`
 
@@ -276,7 +297,7 @@ impl<O: OriginTrait, AccountId> EnsureOrigin<O> for EnsureRoot<AccountId> {
 
 This says: "I work for **any** `O` that implements `OriginTrait`." But `O` is not part of the struct — nobody passes it when writing `EnsureRoot<AccountId>`. So where does it come from?
 
-### Step 4 — In the runtime, `EnsureRoot` is used inside `EitherOfDiverse`, without passing `O`
+#### Step 4 — In the runtime, `EnsureRoot` is used inside `EitherOfDiverse`, without passing `O`
 
 > `substrate/bin/node/runtime/src/lib.rs:1282`
 
@@ -289,7 +310,7 @@ type EnsureRootOrHalfCouncil = EitherOfDiverse<
 
 Nobody wrote `EnsureRoot<AccountId, RuntimeOrigin>`. Just `EnsureRoot<AccountId>`.
 
-### Step 5 — `EitherOfDiverse` also has a hidden generic `OuterOrigin` in its impl
+#### Step 5 — `EitherOfDiverse` also has a hidden generic `OuterOrigin` in its impl
 
 > `substrate/frame/support/src/traits/dispatch.rs:358-371`
 
@@ -309,7 +330,7 @@ impl<OuterOrigin, L: EnsureOrigin<OuterOrigin>, R: EnsureOrigin<OuterOrigin>>
 
 `OuterOrigin` is also not on the struct. But this impl says: for me to work, both `L` and `R` must implement `EnsureOrigin<OuterOrigin>`. Whatever `OuterOrigin` turns out to be, it propagates inward to `L` and `R`.
 
-### Step 6 — The constraint in `pallet_treasury::Config` is what gives everything a value
+#### Step 6 — The constraint in `pallet_treasury::Config` is what gives everything a value
 
 > `substrate/frame/treasury/src/lib.rs:222`
 
@@ -328,20 +349,16 @@ impl pallet_treasury::Config for Runtime {
 }
 ```
 
-### Step 7 — The compiler resolves from outside in
+#### Step 7 — The compiler resolves from outside in
 
 Here's the chain of inference:
 
 1. **`RejectOrigin`** must implement `EnsureOrigin<Self::RuntimeOrigin>`. Since `Self` is `Runtime`, this means `EnsureOrigin<RuntimeOrigin>`.
-
 2. **`EnsureRootOrHalfCouncil`** is `EitherOfDiverse<EnsureRoot<AccountId>, EnsureProportionMoreThan<...>>`. The compiler goes to the impl of `EitherOfDiverse` and matches: `OuterOrigin = RuntimeOrigin`.
-
 3. But the impl requires `L: EnsureOrigin<OuterOrigin>` and `R: EnsureOrigin<OuterOrigin>`. So now the compiler needs:
-   - `EnsureRoot<AccountId>: EnsureOrigin<RuntimeOrigin>`
-   - `EnsureProportionMoreThan<AccountId, CouncilCollective, 1, 2>: EnsureOrigin<RuntimeOrigin>`
-
+   * `EnsureRoot<AccountId>: EnsureOrigin<RuntimeOrigin>`
+   * `EnsureProportionMoreThan<AccountId, CouncilCollective, 1, 2>: EnsureOrigin<RuntimeOrigin>`
 4. **For `EnsureRoot`**: the compiler goes to its impl, matches **`O = RuntimeOrigin`**, and checks: does `RuntimeOrigin: OriginTrait`? Yes — the `#[frame_support::runtime]` macro generated that impl. Compiles.
-
 5. **For `EnsureProportionMoreThan`**: same process, **`O = RuntimeOrigin`**. Does `RuntimeOrigin: OriginTrait + From<RawOrigin<AccountId, CouncilCollective>>`? Yes. Compiles.
 
 ```
@@ -361,11 +378,11 @@ Nobody wrote `EnsureRoot<AccountId, RuntimeOrigin>`. The `RuntimeOrigin` propaga
 
 **Rule of thumb**: if a generic type appears on the `impl` but not on the `struct`, the compiler infers it from the context where the struct is used. You won't find it passed anywhere in the code — it's resolved at compile time through trait bounds.
 
----
+***
 
-# Part II: Origin Definition and Registration
+## Part II: Origin Definition and Registration
 
-## 5. Defining the Custom Origin in pallet-collective
+### 5. Defining the Custom Origin in pallet-collective
 
 **File**: `substrate/frame/collective/src/lib.rs`
 
@@ -384,16 +401,16 @@ pub enum RawOrigin<AccountId, I> {
 
 Two meaningful variants:
 
-- **`Members(n, m)`** — "This action was approved by `n` members out of `m` total." This is the collective's group signature. It carries the approval ratio so that downstream validators can enforce proportion-based rules (e.g., "more than half must have approved").
-- **`Member(AccountId)`** — "This action was dispatched by a single member." Used when a proposal has `threshold < 2` and executes immediately without voting.
+* **`Members(n, m)`** — "This action was approved by `n` members out of `m` total." This is the collective's group signature. It carries the approval ratio so that downstream validators can enforce proportion-based rules (e.g., "more than half must have approved").
+* **`Member(AccountId)`** — "This action was dispatched by a single member." Used when a proposal has `threshold < 2` and executes immediately without voting.
 
 The `I` type parameter enables **instancing**: the same pallet can be used multiple times in a runtime (e.g., Council as `Instance1`, TechnicalCommittee as `Instance2`). Each instance gets its own storage, events, and origin types. `Instance1`, `Instance2`, etc. are empty marker structs that exist solely to make Rust treat each instance as a different type.
 
 At this point, `RawOrigin` is just a type definition. It doesn't do anything yet — it's a data structure that will carry information about collective decisions.
 
----
+***
 
-## 6. Registering the Origin with #[pallet::origin]
+### 6. Registering the Origin with #\[pallet::origin]
 
 **File**: `substrate/frame/collective/src/lib.rs`
 
@@ -408,9 +425,9 @@ By itself, it generates no code. It's a marker — an opt-in signal. When `const
 
 The next section shows exactly what the macro generates from this marker.
 
----
+***
 
-## 7. construct_runtime! Generates the RuntimeOrigin Enum
+### 7. construct\_runtime! Generates the RuntimeOrigin Enum
 
 **File**: Runtime crate (e.g., `runtime/src/lib.rs`)
 
@@ -463,9 +480,9 @@ pub enum RuntimeEvent {
 
 All three follow the exact same pattern: pallet-local type wrapped in a variant of the global enum.
 
----
+***
 
-## 8. Automatic From Generation for Each Variant
+### 8. Automatic From Generation for Each Variant
 
 The macro also generates `From` implementations for each variant, enabling conversion from pallet-local types to the global enum. For origins:
 
@@ -492,17 +509,17 @@ impl From<pallet_collective::RawOrigin<AccountId, Instance2>> for RuntimeOrigin 
 }
 ```
 
-These `From` impls are the **exit door** (see [Section 2](#2-from-as-the-exit-door-how-pallet-types-escape)). Without them, a pallet's `RawOrigin` would be trapped inside the pallet.
+These `From` impls are the **exit door** (see [Section 2](origin-flow-pallet-collective-to-treasury.md#2-from-as-the-exit-door-how-pallet-types-escape)). Without them, a pallet's `RawOrigin` would be trapped inside the pallet.
 
 The corresponding `TryInto` impls are also generated, enabling the reverse: extracting a pallet-specific origin from the global `RuntimeOrigin`. This is the **entry door** used by validators like `EnsureProportionMoreThan` to inspect origins.
 
 The same `From`/`TryInto` generation happens for `RuntimeEvent` and `RuntimeCall` — same pattern, same macro, same purpose.
 
----
+***
 
-# Part III: Wiring Origins and Calls in Config
+## Part III: Wiring Origins and Calls in Config
 
-## 9. Wiring RuntimeOrigin in the Pallet Config
+### 9. Wiring RuntimeOrigin in the Pallet Config
 
 **File**: Runtime crate
 
@@ -547,9 +564,9 @@ type RuntimeOrigin: Into<Result<RawOrigin<Self::AccountId>, Self::RuntimeOrigin>
 
 So the `RuntimeOrigin` type is shared across **all pallets** in the runtime — they all inherit it from `frame_system`. This is how the treasury and the collective end up working with the same origin type without knowing about each other.
 
----
+***
 
-## 10. The Dispatchable Trait: How dispatch Knows Its Origin Type
+### 10. The Dispatchable Trait: How dispatch Knows Its Origin Type
 
 The `Dispatchable` trait is defined in `sp_runtime`:
 
@@ -601,15 +618,15 @@ impl pallet_collective::Config<CouncilCollective> for Runtime {
 
 `RuntimeCall` implements `Dispatchable` with `type RuntimeOrigin = RuntimeOrigin` (auto-generated by `construct_runtime!`). Now when the pallet calls `proposal.dispatch(origin)`, the compiler knows:
 
-- `proposal` is a `RuntimeCall`
-- `dispatch` expects a `RuntimeOrigin`
-- `origin` (from `.into()`) is a `RuntimeOrigin`
+* `proposal` is a `RuntimeCall`
+* `dispatch` expects a `RuntimeOrigin`
+* `origin` (from `.into()`) is a `RuntimeOrigin`
 
 Everything type-checks. The entire chain — from trait definition to dispatch call — is verified at compile time with zero runtime overhead.
 
----
+***
 
-## 11. The Proposal: A Runtime Call Stored On-Chain
+### 11. The Proposal: A Runtime Call Stored On-Chain
 
 When a member proposes a motion, the dispatchable call is stored in the pallet's storage:
 
@@ -635,11 +652,11 @@ let (proposal, len) = Self::validate_and_get_proposal(
 )?;
 ```
 
----
+***
 
-# Part IV: The Dispatch Journey
+## Part IV: The Dispatch Journey
 
-## 12. Voting Ends: Constructing the Origin
+### 12. Voting Ends: Constructing the Origin
 
 **File**: `substrate/frame/collective/src/lib.rs`
 
@@ -663,9 +680,9 @@ fn do_approve_proposal(
 
 This is where the origin is born. `RawOrigin::Members(yes_votes, seats)` captures the voting result: how many members approved and the total number of seats.
 
----
+***
 
-## 13. The .into() Call: From Local Origin to Global Origin
+### 13. The .into() Call: From Local Origin to Global Origin
 
 ```rust
 let origin = RawOrigin::Members(yes_votes, seats).into();
@@ -682,9 +699,9 @@ Before the `.into()`, the origin is a pallet-local type that only `pallet-collec
 
 This is the moment the origin **exits the pallet** and enters the runtime layer. The `From` impl is the exit door that makes this possible.
 
----
+***
 
-## 14. proposal.dispatch(origin): Entering the Runtime Dispatch
+### 14. proposal.dispatch(origin): Entering the Runtime Dispatch
 
 ```rust
 let result = proposal.dispatch(origin);
@@ -696,9 +713,9 @@ As explained in Section 10, `dispatch` expects `Self::RuntimeOrigin`, which has 
 
 At this point, **two separate things come together**: the call (what to do) and the origin (who authorized it). The call was stored in storage for days. The origin was just constructed from the voting results. They were separate until this exact line.
 
----
+***
 
-## 15. Runtime Dispatch: The Call Router
+### 15. Runtime Dispatch: The Call Router
 
 The `Dispatchable` impl for `RuntimeCall` is auto-generated by `construct_runtime!`:
 
@@ -723,9 +740,9 @@ The runtime dispatch is a **pure router**. It matches on the `RuntimeCall` varia
 
 In our example, `RuntimeCall::Treasury(call)` matches, and `call` is the pallet-level `pallet_treasury::Call::reject_proposal { proposal_id: 42 }`. The origin is forwarded unchanged: `RuntimeOrigin::Council(Members(4, 5))`.
 
----
+***
 
-## 16. Pallet-Level Dispatch: Reaching the Target Function
+### 16. Pallet-Level Dispatch: Reaching the Target Function
 
 The `#[pallet::call]` macro generates a `Dispatchable` impl for each pallet's `Call` enum:
 
@@ -755,11 +772,11 @@ RuntimeCall::Treasury(Call::reject_proposal { proposal_id: 42 })
     → Pallet::<T>::reject_proposal(origin, 42)
 ```
 
----
+***
 
-# Part V: Origin Validation
+## Part V: Origin Validation
 
-## 17. All Pallet Functions Receive RuntimeOrigin, Never a Local Origin
+### 17. All Pallet Functions Receive RuntimeOrigin, Never a Local Origin
 
 Every dispatchable function in every pallet receives the origin as `OriginFor<T>`:
 
@@ -777,9 +794,9 @@ Which in the runtime resolves to the global `RuntimeOrigin` enum. **No pallet fu
 
 This is a hard rule: the dispatch system always passes the runtime-level origin. Pallet-local origins only exist during creation (inside the producing pallet) and during validation (inside an `EnsureOrigin` impl). In between, they travel wrapped inside `RuntimeOrigin`.
 
----
+***
 
-## 18. EnsureOrigin: A Validator, Not an Origin
+### 18. EnsureOrigin: A Validator, Not an Origin
 
 A critical distinction: **`EnsureOrigin` is not an origin. It's a validator — a filter — that inspects an origin and says yes or no.**
 
@@ -813,9 +830,9 @@ pub trait EnsureOrigin<OuterOrigin> {
 }
 ```
 
-- **`try_origin`**: Receives an origin. Returns `Ok(Success)` if valid, or `Err(origin)` if not. The key detail: on failure, it **returns the origin back** so another validator can try it (used by `EitherOfDiverse`).
-- **`ensure_origin`**: Same thing but discards the origin on failure, returning just `BadOrigin`.
-- **`type Success`**: What information is extracted on success. Can be `()` (nothing, just passed), `AccountId` (who signed), `(MemberCount, MemberCount)` (approval ratio), etc.
+* **`try_origin`**: Receives an origin. Returns `Ok(Success)` if valid, or `Err(origin)` if not. The key detail: on failure, it **returns the origin back** so another validator can try it (used by `EitherOfDiverse`).
+* **`ensure_origin`**: Same thing but discards the origin on failure, returning just `BadOrigin`.
+* **`type Success`**: What information is extracted on success. Can be `()` (nothing, just passed), `AccountId` (who signed), `(MemberCount, MemberCount)` (approval ratio), etc.
 
 The treasury uses it as a guard at the top of its functions:
 
@@ -826,9 +843,9 @@ pub fn reject_proposal(origin: OriginFor<T>, proposal_id: u32) -> ... {
 }
 ```
 
----
+***
 
-## 19. OriginTrait and PalletsOrigin: Opening the RuntimeOrigin Envelope
+### 19. OriginTrait and PalletsOrigin: Opening the RuntimeOrigin Envelope
 
 To validate an origin, validators need to look **inside** the `RuntimeOrigin` enum. Two key pieces enable this:
 
@@ -872,12 +889,12 @@ RuntimeOrigin
 
 Different validators use different methods:
 
-- **`EnsureRoot`** uses `o.as_system_ref()` — a shortcut that directly checks if the origin is `System(Root)`.
-- **`EnsureProportionMoreThan`** uses `o.caller().try_into()` — gets the `PalletsOrigin`, then attempts to convert it to a specific pallet's `RawOrigin`.
+* **`EnsureRoot`** uses `o.as_system_ref()` — a shortcut that directly checks if the origin is `System(Root)`.
+* **`EnsureProportionMoreThan`** uses `o.caller().try_into()` — gets the `PalletsOrigin`, then attempts to convert it to a specific pallet's `RawOrigin`.
 
----
+***
 
-## 20. EitherOfDiverse: Composing Multiple Validators
+### 20. EitherOfDiverse: Composing Multiple Validators
 
 **File**: Runtime crate
 
@@ -915,9 +932,9 @@ Note the `OuterOrigin` parameter on the `impl`: it's not specified explicitly an
 
 Also note why `try_origin` returns `Err(origin)` instead of `Err(BadOrigin)`: **so the origin can be passed to the next validator**. If `EnsureRoot` consumed the origin on failure, `EitherOfDiverse` couldn't forward it to `EnsureProportionMoreThan`.
 
----
+***
 
-## 21. EnsureRoot: Checking for Root Origin
+### 21. EnsureRoot: Checking for Root Origin
 
 **File**: `substrate/frame/system/src/lib.rs`
 
@@ -941,9 +958,9 @@ The bound `O: OriginTrait` is the only constraint. `EnsureRoot` doesn't need `Fr
 
 In our flow, the origin is `RuntimeOrigin::Council(Members(4, 5))`, which is not Root. So `EnsureRoot` returns `Err`, and `EitherOfDiverse` proceeds to the second validator.
 
----
+***
 
-## 22. EnsureProportionMoreThan: Checking Collective Approval
+### 22. EnsureProportionMoreThan: Checking Collective Approval
 
 **File**: `substrate/frame/collective/src/lib.rs`
 
@@ -970,12 +987,12 @@ where
 
 **Struct parameters:**
 
-| Parameter | Purpose | Example Value |
-|-----------|---------|---------------|
-| `AccountId` | Account type, generic | `AccountId` |
-| `I` | Collective instance marker | `Instance1` (Council) |
-| `const N` | Proportion numerator | `1` |
-| `const D` | Proportion denominator | `2` |
+| Parameter   | Purpose                    | Example Value         |
+| ----------- | -------------------------- | --------------------- |
+| `AccountId` | Account type, generic      | `AccountId`           |
+| `I`         | Collective instance marker | `Instance1` (Council) |
+| `const N`   | Proportion numerator       | `1`                   |
+| `const D`   | Proportion denominator     | `2`                   |
 
 `N` and `D` are **const generics** — values, not types, fixed at compile time. They represent the minimum proportion required: `N/D`. With `N=1, D=2`, the rule is "more than 1/2".
 
@@ -1009,11 +1026,11 @@ The origin is valid. `ensure_origin` returns `Ok(())`, and the treasury function
 
 Note that `EnsureProportionMoreThan` is defined **inside `pallet-collective`**, the same pallet that produces the origins. The pallet provides both the "exit door" (the `RawOrigin` and its `From` impl) and the "entry door" (the `EnsureOrigin` validators that know how to read those origins). Other pallets like treasury use these validators without knowing anything about the collective's internals.
 
----
+***
 
-# Part VI: Reuse and Extension Patterns
+## Part VI: Reuse and Extension Patterns
 
-## 23. The Instance Parameter: Supporting Multiple Collectives
+### 23. The Instance Parameter: Supporting Multiple Collectives
 
 The `I` parameter in `RawOrigin<AccountId, I>` is what prevents a TechnicalCommittee origin from being accepted where a Council origin is required.
 
@@ -1046,15 +1063,15 @@ pub struct Instance2;
 
 But because they're different types, everything downstream becomes distinct:
 
-- **Storage**: `Members<T, Instance1>` and `Members<T, Instance2>` have different storage key prefixes. Council members and TechnicalCommittee members never mix.
-- **Origins**: `RawOrigin<AccountId, Instance1>` and `RawOrigin<AccountId, Instance2>` are different types. The `TryInto` generated for one doesn't match the other.
-- **Validators**: `EnsureProportionMoreThan<AccountId, Instance1, 1, 2>` only accepts Council origins. TechnicalCommittee origins fail the `try_into()`.
+* **Storage**: `Members<T, Instance1>` and `Members<T, Instance2>` have different storage key prefixes. Council members and TechnicalCommittee members never mix.
+* **Origins**: `RawOrigin<AccountId, Instance1>` and `RawOrigin<AccountId, Instance2>` are different types. The `TryInto` generated for one doesn't match the other.
+* **Validators**: `EnsureProportionMoreThan<AccountId, Instance1, 1, 2>` only accepts Council origins. TechnicalCommittee origins fail the `try_into()`.
 
 Without the instance parameter, you'd need to write separate pallets for Council and TechnicalCommittee — identical code duplicated. With `I`, you write the pallet once and instantiate it as many times as needed.
 
----
+***
 
-## 24. DefaultVote: Configurable Abstention Strategy
+### 24. DefaultVote: Configurable Abstention Strategy
 
 **File**: `substrate/frame/collective/src/lib.rs`
 
@@ -1114,9 +1131,9 @@ The same "define trait in pallet, implement outside" pattern used by `EnsureOrig
 
 **Important**: `DefaultVote` is only evaluated in `do_close` when the voting period has expired. If a proposal reaches the threshold before the deadline, these strategies are never called — abstentions are irrelevant.
 
----
+***
 
-## 25. Where to Place Custom Trait Implementations
+### 25. Where to Place Custom Trait Implementations
 
 When you implement a custom `DefaultVote`, `EnsureOrigin`, or any other trait from a pallet, the placement depends on scope:
 
@@ -1143,11 +1160,11 @@ Import from each runtime that needs it.
 
 **General rule**: Don't overengineer. If it's a 10-line struct used by one runtime, put it next to the `impl Config`. Extract to a crate only when actual reuse demands it.
 
----
+***
 
-# Part VII: Summary
+## Part VII: Summary
 
-## 26. Complete Flow Diagram
+### 26. Complete Flow Diagram
 
 ```
 PALLET-COLLECTIVE (Voting completes)
@@ -1215,19 +1232,19 @@ PALLET-TREASURY (Execution)
                             └── 6. Origin valid → execute reject_proposal logic
 ```
 
----
+***
 
-## 27. Key Architectural Principles
+### 27. Key Architectural Principles
 
-| Principle | How It's Achieved |
-|-----------|-------------------|
-| **Pallets are decoupled** | No pallet imports another. They communicate through traits and the type system. |
-| **The runtime is the compositor** | `construct_runtime!` generates the glue: `RuntimeOrigin`, `RuntimeCall`, `RuntimeEvent`, `From` impls, `Dispatchable` impls. |
-| **One pattern rules all** | Origins, events, and calls all use the same mechanism: pallet-local type → `From` → global enum variant. |
-| **`From` is the exit door** | Without it, pallet types are trapped. `From` lets them escape to the runtime level. `TryInto` lets validators reach back in. |
-| **The constraint funnel** | Traits are maximally generic. Configs add bounds. Runtimes concretize. Each layer narrows without breaking the layers above. |
-| **Compiler inference eliminates boilerplate** | Generic type parameters on `impl` blocks are inferred from context, not passed explicitly. |
-| **Origins are data, not permissions** | `RawOrigin::Members(4, 5)` is just a fact: "4 of 5 approved." Whether that's sufficient is decided by the validator. |
-| **Validators are pluggable** | `EnsureOrigin` is a trait. The runtime chooses which validators to use for each action. Custom validators can be implemented outside any pallet. |
-| **Everything resolves at compile time** | Generic type parameters, trait bounds, and `From`/`TryInto` are all resolved by the Rust compiler. Zero runtime overhead. No vtables, no dynamic dispatch. |
-| **Instances enable reuse** | The `I` parameter gives each pallet instance its own storage, origins, and events without code duplication. |
+| Principle                                     | How It's Achieved                                                                                                                                          |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pallets are decoupled**                     | No pallet imports another. They communicate through traits and the type system.                                                                            |
+| **The runtime is the compositor**             | `construct_runtime!` generates the glue: `RuntimeOrigin`, `RuntimeCall`, `RuntimeEvent`, `From` impls, `Dispatchable` impls.                               |
+| **One pattern rules all**                     | Origins, events, and calls all use the same mechanism: pallet-local type → `From` → global enum variant.                                                   |
+| **`From` is the exit door**                   | Without it, pallet types are trapped. `From` lets them escape to the runtime level. `TryInto` lets validators reach back in.                               |
+| **The constraint funnel**                     | Traits are maximally generic. Configs add bounds. Runtimes concretize. Each layer narrows without breaking the layers above.                               |
+| **Compiler inference eliminates boilerplate** | Generic type parameters on `impl` blocks are inferred from context, not passed explicitly.                                                                 |
+| **Origins are data, not permissions**         | `RawOrigin::Members(4, 5)` is just a fact: "4 of 5 approved." Whether that's sufficient is decided by the validator.                                       |
+| **Validators are pluggable**                  | `EnsureOrigin` is a trait. The runtime chooses which validators to use for each action. Custom validators can be implemented outside any pallet.           |
+| **Everything resolves at compile time**       | Generic type parameters, trait bounds, and `From`/`TryInto` are all resolved by the Rust compiler. Zero runtime overhead. No vtables, no dynamic dispatch. |
+| **Instances enable reuse**                    | The `I` parameter gives each pallet instance its own storage, origins, and events without code duplication.                                                |
