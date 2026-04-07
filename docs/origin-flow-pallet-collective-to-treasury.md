@@ -139,23 +139,7 @@ Layer 2 — `frame_system::Config` adds the first real constraints:
 #[pallet::config(with_default, frame_system_config)]
 #[pallet::disable_frame_system_supertrait_check]
 pub trait Config: 'static + Eq + Clone {
-    #[pallet::no_default_bounds]
-    type RuntimeEvent: Parameter
-        + Member
-        + From<Event<Self>>
-        + Debug
-        + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
-    /// The basic call filter to use in Origin. All origins are built with this filter as base,
-    /// except Root.
-    #[pallet::no_default_bounds]
-    type BaseCallFilter: Contains<Self::RuntimeCall>;
-
-    #[pallet::constant]
-    type BlockWeights: Get<limits::BlockWeights>;
-
-    #[pallet::constant]
-    type BlockLength: Get<limits::BlockLength>;
+    // ... other associated types ...
 
     /// The `RuntimeOrigin` type used by dispatchable calls.
     #[pallet::no_default_bounds]
