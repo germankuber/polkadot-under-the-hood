@@ -492,7 +492,7 @@ impl From<pallet_collective::RawOrigin<AccountId, Instance2>> for RuntimeOrigin 
 }
 ```
 
-These `From` impls are the **exit door** (see Section 2). Without them, a pallet's `RawOrigin` would be trapped inside the pallet.
+These `From` impls are the **exit door** (see [Section 2](#2-from-as-the-exit-door-how-pallet-types-escape)). Without them, a pallet's `RawOrigin` would be trapped inside the pallet.
 
 The corresponding `TryInto` impls are also generated, enabling the reverse: extracting a pallet-specific origin from the global `RuntimeOrigin`. This is the **entry door** used by validators like `EnsureProportionMoreThan` to inspect origins.
 
