@@ -151,7 +151,13 @@ pub trait Config: 'static + Eq + Clone {
 }
 ```
 
-This is where `RuntimeOrigin` stops being "any type with Debug" and gains its first concrete shape: it must convert to/from `RawOrigin`, implement `OriginTrait`, and carry the runtime's `AccountId`. Every pallet that declares `Config: frame_system::Config` inherits these bounds automatically.
+This is where `RuntimeOrigin` stops being "any type with Debug" and gains its first concrete shape:
+
+- `From<RawOrigin<Self::AccountId>>` — `RuntimeOrigin` must be **constructable from** a `frame_system::RawOrigin`. Direction: `RawOrigin → RuntimeOrigin`. This is what allows `RuntimeOrigin::from(RawOrigin::Root)` or `RuntimeOrigin::from(RawOrigin::Signed(account))`.
+- `Into<Result<RawOrigin<Self::AccountId>, Self::RuntimeOrigin>>` — the reverse: `RuntimeOrigin` must be **unwrappable back into** a `RawOrigin` (returning `Err(self)` if it's not a system origin). This is what `EnsureOrigin` implementations use to inspect what's inside.
+- `OriginTrait` — provides the standard interface (`caller()`, `add_filter()`, etc.).
+
+Every pallet that declares `Config: frame_system::Config` inherits these bounds automatically.
 
 Layer 3 — The pallet Config adds its own constraint on top:
 
@@ -164,7 +170,9 @@ pub trait Config<I: 'static = ()>: frame_system::Config {
 }
 ```
 
-Now `Dispatchable::RuntimeOrigin` must be the same type as the Config's `RuntimeOrigin`, which must support `From<RawOrigin>` (the collective's own `RawOrigin` with instance `I`).
+Note that this `RuntimeOrigin` is a **different associated type** than `frame_system::Config::RuntimeOrigin` — they live in different traits (`<T as frame_system::Config>::RuntimeOrigin` vs `<T as pallet_collective::Config<I>>::RuntimeOrigin`). The name is the same by convention, not by collision. In the runtime, both are assigned to the same concrete `RuntimeOrigin` enum.
+
+The `From<RawOrigin<Self::AccountId, I>>` here refers to `pallet_collective::RawOrigin`, not `frame_system::RawOrigin` — they are different types. The collective's `RawOrigin` has variants like `Members(MemberCount, MemberCount)` representing a council vote quorum. This bound ensures `RuntimeOrigin` can be constructed from a collective vote result, just like Layer 2 ensures it can be constructed from `Root`/`Signed`/`None`.
 
 Layer 4 — The runtime concretizes everything:
 
