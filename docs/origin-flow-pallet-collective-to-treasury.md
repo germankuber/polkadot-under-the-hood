@@ -785,8 +785,11 @@ A critical distinction: **`EnsureOrigin` is not an origin. It's a validator — 
 
 In the treasury's Config:
 
+> `substrate/frame/treasury/src/lib.rs:222`
+
 ```rust
 pub trait Config: frame_system::Config {
+    /// Origin from which rejections must come.
     type RejectOrigin: EnsureOrigin<Self::RuntimeOrigin>;
     // ...
 }
