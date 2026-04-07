@@ -122,6 +122,8 @@ A recurring source of confusion in FRAME code is: "this trait is so generic, how
 
 Layer 1 — The trait is maximally generic:
 
+> `substrate/primitives/runtime/src/traits/mod.rs`
+
 ```rust
 pub trait Dispatchable {
     type RuntimeOrigin: Debug;  // any type with Debug
@@ -129,7 +131,47 @@ pub trait Dispatchable {
 }
 ```
 
-Layer 2 — The pallet Config adds a constraint:
+Layer 2 — `frame_system::Config` adds the first real constraints:
+
+> `substrate/frame/system/src/lib.rs`
+
+```rust
+#[pallet::config(with_default, frame_system_config)]
+#[pallet::disable_frame_system_supertrait_check]
+pub trait Config: 'static + Eq + Clone {
+    #[pallet::no_default_bounds]
+    type RuntimeEvent: Parameter
+        + Member
+        + From<Event<Self>>
+        + Debug
+        + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+
+    /// The basic call filter to use in Origin. All origins are built with this filter as base,
+    /// except Root.
+    #[pallet::no_default_bounds]
+    type BaseCallFilter: Contains<Self::RuntimeCall>;
+
+    #[pallet::constant]
+    type BlockWeights: Get<limits::BlockWeights>;
+
+    #[pallet::constant]
+    type BlockLength: Get<limits::BlockLength>;
+
+    /// The `RuntimeOrigin` type used by dispatchable calls.
+    #[pallet::no_default_bounds]
+    type RuntimeOrigin: Into<Result<RawOrigin<Self::AccountId>, Self::RuntimeOrigin>>
+        + From<RawOrigin<Self::AccountId>>
+        + Clone
+        + OriginTrait<Call = Self::RuntimeCall, AccountId = Self::AccountId>
+        + AsTransactionAuthorizedOrigin;
+}
+```
+
+This is where `RuntimeOrigin` stops being "any type with Debug" and gains its first concrete shape: it must convert to/from `RawOrigin`, implement `OriginTrait`, and carry the runtime's `AccountId`. Every pallet that declares `Config: frame_system::Config` inherits these bounds automatically.
+
+Layer 3 — The pallet Config adds its own constraint on top:
+
+> `substrate/frame/collective/src/lib.rs`
 
 ```rust
 pub trait Config<I: 'static = ()>: frame_system::Config {
@@ -138,9 +180,11 @@ pub trait Config<I: 'static = ()>: frame_system::Config {
 }
 ```
 
-Now `Dispatchable::RuntimeOrigin` must be the same type as the Config's `RuntimeOrigin`, which must support `From<RawOrigin>`.
+Now `Dispatchable::RuntimeOrigin` must be the same type as the Config's `RuntimeOrigin`, which must support `From<RawOrigin>` (the collective's own `RawOrigin` with instance `I`).
 
-Layer 3 — The runtime concretizes everything:
+Layer 4 — The runtime concretizes everything:
+
+> `polkadot/runtime/kusama/src/lib.rs`
 
 ```rust
 impl pallet_collective::Config<CouncilCollective> for Runtime {
@@ -152,14 +196,16 @@ impl pallet_collective::Config<CouncilCollective> for Runtime {
 The funnel:
 
 ```
-Dispatchable trait      →  any type with Debug
+Dispatchable trait          →  any type with Debug
     ↓
-Config constraint       →  must support From<RawOrigin>
+frame_system::Config        →  must convert to/from RawOrigin, implement OriginTrait
     ↓
-Runtime assignment      →  it's RuntimeOrigin, the auto-generated enum
+pallet_collective::Config   →  must also support From<collective::RawOrigin>
+    ↓
+Runtime assignment          →  it's RuntimeOrigin, the auto-generated enum
 ```
 
-Each layer narrows without breaking the genericidade of the layers above. The trait stays reusable, the Config stays pallet-generic, and only the runtime pins everything to concrete types.
+Each layer narrows without breaking the genericity of the layers above. The trait stays reusable, `frame_system` sets the foundational bounds, the pallet Config stays pallet-generic, and only the runtime pins everything to concrete types.
 
 ---
 
