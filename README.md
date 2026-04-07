@@ -1,7 +1,7 @@
 # Polkadot Under the Hood
 
 <p align="center">
-  <img src="./assets/polkadot.png" alt="Polkadot Logo" width="200">
+  <img src="./assets/polkadot.png" width="200">
 </p>
 
 Deep dives into Polkadot/Substrate internals with detailed code analysis and line-by-line explanations.
