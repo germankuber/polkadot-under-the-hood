@@ -176,7 +176,7 @@ The `From<RawOrigin<Self::AccountId, I>>` here refers to `pallet_collective::Raw
 
 Layer 4 — The runtime concretizes everything:
 
-> `polkadot/runtime/kusama/src/lib.rs`
+> `substrate/bin/node/runtime/src/lib.rs`
 
 ```rust
 impl pallet_collective::Config<CouncilCollective> for Runtime {
