@@ -36,6 +36,7 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 | [Transaction Pool Deep Dive](docs/transaction-pool-deep-dive.md)                                       | From RPC submission through validation, pool insertion with dependency resolution, and block inclusion                                                            |
 | [Runtime WASM Injection Deep Dive](docs/runtime-wasm-injection-deep-dive.md)                           | How the runtime WASM travels from Rust source code to node execution — compilation, embedding, storage, and executor injection                                    |
 | [Scale Codec and Runtime Metadata Deep Dive](docs/scale-codec-and-runtime-metadata-deep-dive.md)       | SCALE encoding/decoding internals and how runtime metadata is generated, exposed, and consumed by external tools                                                  |
+| [Storage Deep Dive](docs/storage-deep-dive.md)                                                         | Patricia Merkle Trie, storage layers (overlay → backend → RocksDB), state root calculation, storage proofs, and FRAME storage items internals                    |
 
 ## About
 

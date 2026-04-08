@@ -12,6 +12,7 @@
 
 * [Runtime WASM Injection Deep Dive](docs/runtime-wasm-injection-deep-dive.md)
 * [Scale Codec and Runtime Metadata Deep Dive](docs/scale-codec-and-runtime-metadata-deep-dive.md)
+* [Storage Deep Dive](docs/storage-deep-dive.md)
 
 ## XCM
 
