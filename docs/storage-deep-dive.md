@@ -24,6 +24,8 @@
 
 Substrate uses a **Base-16 Modified Merkle Patricia Trie** to store all on-chain state. This is not a regular key-value store — it's a tree structure where every node is hashed, and the hash of the root node (the "state root") goes into the block header. This single hash cryptographically commits to the entire state of the chain.
 
+> **Interactive Simulator:** You can explore how this trie works visually — insert keys, inspect nodes, generate Merkle proofs, and see the KVDB — in the [Merkle Patricia Trie Simulator](https://merklepatriciatree.vercel.app) ([source code](https://github.com/germankuber/merkle-patricia-trie-simulator)).
+
 ### Two Layouts: V0 and V1
 
 Substrate defines two trie layouts, both generic over a Hasher `H`:
