@@ -37,6 +37,7 @@ Deep dives into Polkadot/Substrate internals with detailed code analysis and lin
 | [Runtime WASM Injection Deep Dive](docs/runtime-wasm-injection-deep-dive.md)                           | How the runtime WASM travels from Rust source code to node execution — compilation, embedding, storage, and executor injection                                    |
 | [Scale Codec and Runtime Metadata Deep Dive](docs/scale-codec-and-runtime-metadata-deep-dive.md)       | SCALE encoding/decoding internals and how runtime metadata is generated, exposed, and consumed by external tools                                                  |
 | [Storage Deep Dive](docs/storage-deep-dive.md)                                                         | Patricia Merkle Trie, storage layers (overlay → backend → RocksDB), state root calculation, storage proofs, and FRAME storage items internals                    |
+| [The Overseer Deep Dive](docs/overseer-deep-dive.md)                                                   | The internal orchestrator of a Polkadot node: how the Overseer is wired to the Substrate Client, how external block-import events become internal `ActiveLeaves` signals, how messages route between subsystems, end-to-end with the PVF precompilation flow as the running example |
 
 ## About
 

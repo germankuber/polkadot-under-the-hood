@@ -8,6 +8,10 @@
 * [Transaction Pool Deep Dive](docs/transaction-pool-deep-dive.md)
 * [Collation Submission Pipeline](docs/collation-submission-pipeline.md)
 
+## Node Internals
+
+* [The Overseer Deep Dive](docs/overseer-deep-dive.md)
+
 ## Runtime Internals
 
 * [Runtime WASM Injection Deep Dive](docs/runtime-wasm-injection-deep-dive.md)
